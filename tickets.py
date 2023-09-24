@@ -176,10 +176,10 @@ class TicketCog(commands.Cog):
             returnv = f"You have {tr} tickets open:\n{returnv}"
             await interaction.followup.send(returnv,ephemeral=True)
 
-    @commands.command(name="sendticket",description="Owner only. Sends a message.")
-    async def send_ticket(self, interaction: discord.Interaction, ch: discord.TextChannel=None):
-        if interaction.user.id != me:
-            await interaction.response.send_message("This command is not for you")
+    @commands.hybrid_command(name="sendticket",description="Owner only. Sends a message.")
+    async def send_ticket(self, interaction: commands.Context, ch: discord.TextChannel=None):
+        if interaction.author.id not in me:
+            await interaction.reply("This command is not for you")
             return
         
         if ch is None: ch = interaction.channel
@@ -188,11 +188,11 @@ class TicketCog(commands.Cog):
 
         await ch.send(embed=emb,view=OpenTicketView())
 
-
 class TicketType(Enum):
     SUPPORT = 1
     BUG = 2
     REPORT = 3
+    ROLE = 4
 
     def __str__(self):
         return self.name.title()
@@ -202,6 +202,7 @@ class MinecraftServers(Enum):
     CREATIVE = "creative"
     CLICK_ARCHIVE = "click"
     TEST = "testing"
+    NA = "na"
 
     def __str__(self):
         return self.name.title()
@@ -589,8 +590,8 @@ async def check_user_ticket(user: discord.Member) -> int | None:
     return None
 
 class OpenTicketModal(ui.Modal, title='Questionnaire Response'):
-    server = ui.TextInput(label='Which server is this issue on?', placeholder='Survival, Creative, or Click',required=True)
-    issue = ui.TextInput(label='Please detail your issue', placeholder='Why are you making this ticket?',required=True)
+    server = ui.TextInput(label='Which server is this issue on?', placeholder='Survival, Creative, Click or NA',required=True)
+    issue = ui.TextInput(label='Please detail your issue/inquiry', placeholder='Why are you making this ticket?',required=True)
 
     def __init__(self,tickettype: TicketType):
         super().__init__()
@@ -629,6 +630,10 @@ class OpenTicketView(discord.ui.View):
     @discord.ui.button(label='Report a Complaint', style=discord.ButtonStyle.green, custom_id='persistent_view:complaint',emoji="📝")
     async def grey(self, interaction: discord.Interaction, button: discord.ui.Button):
         await OpenTicketView.on_button_press(interaction, TicketType.SUPPORT)
+    
+    @discord.ui.button(label='Request Role',style=discord.ButtonStyle.blurple, custom_id='persistent_view:role',emoji="👨🏻‍💻")
+    async def blurple(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await OpenTicketView.on_button_press(interaction, TicketType.ROLE)
 
 class ClaimTicketView(discord.ui.View):
     def __init__(self):

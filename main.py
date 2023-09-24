@@ -1,5 +1,5 @@
 import discord
-from discord import CategoryChannel, app_commands, ui
+from discord import CategoryChannel, app_commands, channel, ui
 from discord.app_commands import Group
 from discord.ext import commands, tasks
 import os
@@ -21,8 +21,9 @@ import python_mcstatus
 import re
 from enum import Enum
 import pkgutil
-from typing import Literal
+from typing import Literal, Union, Optional
 from aidenlib.main import getorfetch_channel, getorfetch_user, getorfetch_guild, getorfetch_user, dchyperlink, dctimestamp, makeembed, makeembed_bot, dchyperlink, dctimestamp
+from pprint import pprint
 
 with open('client.yml', 'r') as f: token = dict(yaml.safe_load(f)).get('token')
 
@@ -81,9 +82,16 @@ forums_handler = logging.FileHandler(filename='forums.log', encoding='utf-8', mo
 forums_handler.setFormatter(formatter)
 logger_forums.addHandler(forums_handler)
 
+logger_music = logging.getLogger("music")
+logger_music.setLevel(logging.INFO)
+music_handler = logging.FileHandler(filename='music.log', encoding='utf-8', mode='a+')
+music_handler.setFormatter(formatter)
+logger_music.addHandler(music_handler)
 
 
-guilds: list[int] = [1029151630215618600,1134933747800735859]
+guilds: list[int] = [1029151630215618600,1134933747800735859, 1078716884758831114]
+
+sessions = []
 
 emojidict: dict[str | int, str] = {
 'discord': '<:discord:1080925531580682360>',
@@ -111,6 +119,8 @@ False: "<a:X_:1046808381266067547>",
 "blue": "\U0001f535",
 'purple': "\U0001f7e3",
 
+"headphones": "\U0001f3a7",
+
 "hamburger": '🍔',
 "building": '🏛️',
 "click": '🖱️',
@@ -118,11 +128,30 @@ False: "<a:X_:1046808381266067547>",
 "pick": '⛏️',
 "restart": '🔄',
 
+"skull": "\U0001f480",
+"laughing": "\U0001f923",
+"notfunny": "\U0001f610",
+
 1: "\U00000031"+"\U0000fe0f"+"\U000020e3",
 2: "\U00000032"+"\U0000fe0f"+"\U000020e3",
 3: "\U00000033"+"\U0000fe0f"+"\U000020e3",
 4: "\U00000034"+"\U0000fe0f"+"\U000020e3",
 5: "\U00000035"+"\U0000fe0f"+"\U000020e3",
+
+"stop": "\U000023f9",
+"playpause": "\U000023ef",
+"eject": "\U000023cf",
+"play": "\U000025b6",
+"pause": "\U000023f8",
+"record": "\U000023fa",
+"next": "\U000023ed",
+"prev": "\U000023ee",
+"fastforward": "\U000023e9",
+"rewind": "\U000023ea",
+"repeat": "\U0001f501",
+"back": "\U000025c0",
+"forward": "\U000025b6", # same as play
+"shuffle": "\U0001f500",
 }
 
 revemojidict = {value: key for key, value in emojidict.items()}
@@ -134,7 +163,7 @@ async def createtables():
             logger_db.info("Created Users table (if exists)")
             await cursor.execute('''CREATE TABLE IF NOT EXISTS ArchivedUsers (dbid INTEGER PRIMARY KEY AUTOINCREMENT, datelogged INTEGER, lastupdated INTEGER, olddbid INTEGER, olddatelogged INTEGER, oldlastupdated INTEGER, discordid INT, discorduser TEXT, displayname TEXT, mcusername TEXT, mcuuid TEXT, addedby INT, UNIQUE (dbid, discordid, mcuuid, olddbid))''')
             logger_db.info("Created ArchivedUsers table (if exists)")
-            await cursor.execute('''CREATE TABLE IF NOT EXISTS NewPlayers(dbid INTEGER PRIMARY KEY AUTOINCREMENT, datelogged INTEGER, lastupdated INTEGER, mcusername TEXT, mcuuid TEXT, UNIQUE (dbid, mcusername, mcuuid)) STRICT''')
+            await cursor.execute('''CREATE TABLE IF NOT EXISTS NewPlayers(dbid INTEGER PRIMARY KEY AUTOINCREMENT, datelogged INTEGER, lastupdated INTEGER, mcusername TEXT, mcuuid TEXT, UNIQUE (dbid, mcusername, mcuuid))''')
             logger_db.info("Created Players table (if exists)")
             await cursor.execute('''CREATE TABLE IF NOT EXISTS ServerInfo(dbid INTEGER PRIMARY KEY AUTOINCREMENT, datelogged INTEGER, lastupdated INTEGER, ip TEXT, port INTEGER, UNIQUE (dbid))''')
             logger_db.info("Created ServerInfo table (if exists)")
@@ -147,17 +176,22 @@ async def createtables():
             await cursor.execute("CREATE TABLE IF NOT EXISTS TicketUsers(dbid INTEGER PRIMARY KEY AUTOINCREMENT, userid INTEGER, username TEXT, ticket_num INTEGER, UNIQUE(dbid))")
             logger_db.info("Created TicketUsers table (if exists)")
 
+async def set_voice_status(channelorid: Union[discord.VoiceChannel, int], status: Optional[str], sessions=None):
+    if isinstance(channelorid, discord.VoiceChannel): channelorid = channelorid.id
+    r = await request_put(f'https://discord.com/api/v9/channels/{channelorid}/voice-status',json={"status": status}, sessions=sessions,headers=
+    {"Authorization": f"Bot {token}",
+    "X-Super-Properties": "eyJvcyI6IkxpbnV4IiwiYnJvd3NlciI6IkZpcmVmb3giLCJkZXZpY2UiOiIiLCJzeXN0ZW1fbG9jYWxlIjoicnUtUlUiLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoWDExOyBMaW51eCB4ODZfNjQ7IHJ2OjEwOS4wKSBHZWNrby8yMDEwMDEwMSBGaXJlZm94LzExNy4wIiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTE3LjAiLCJvc192ZXJzaW9uIjoiIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6IiIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6IiIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjIyNzEwMiwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="})
+    return r
 
 
-
-async def request_get(url: str) -> dict | None:
+async def request_get(url: str,sessions=sessions) -> dict | None:
     #sessions: list[aiohttp.ClientSession] = [bot.session, bot.session2, bot.session3]
-    global sessions
+    #global sessions
     requestcount: int = 0
     for session in sessions:
         try:
-            if session == bot.session2: logger_requests.info("session2")
-            elif session == bot.session3: logger_requests.info("session3")
+            if requestcount == 2: logger_requests.info("session2")
+            elif requestcount == 3: logger_requests.info("session3")
             try:
                 r = await session.get(url)
                 logger_requests.info(f"Request sent: {r.status} from {r.url}")
@@ -201,6 +235,48 @@ async def request_post(url: str, json: list | dict, normal: bool=False):
                 except Exception as e:
                     print(f"Exception: {e}")
                     return None
+
+sessions = []
+
+async def request_put(url, **kwargs):
+    try:
+        global sessions
+        if kwargs.get('sessions') != None: 
+            sessions = kwargs.get('sessions')
+            kwargs.pop('sessions')
+        requestcount: int = 0
+        for session in sessions:
+            try:
+                #if session == bot.session2: logger_requests.info("session2")
+                #elif session == bot.session3: logger_requests.info("session3")
+                try:
+                    r = await session.put(url, **kwargs)
+                    requestcount += 1
+                    logger_requests.info(f"{'PUT':<6} | Request sent: {r.status} from {r.url}")
+                    if str(r.status).startswith("2") and r.status != 204:
+                        try:
+                            r = await r.json()
+                        except:
+                            return await r.text()
+                        return r
+                    elif r.status == 204:
+                        return r.status
+                    elif str(r.status).startswith("4"):
+                        if r.status == 429:
+                            await asyncio.sleep(10)
+                            return await request_put(url, **kwargs)
+                        if r.status == 404:
+                            raise ValueError("404")
+                    else:
+                        raise Exception(f"Status Code: {r.status}")
+                except ValueError:
+                    raise ValueError
+                except Exception as e:
+                    logger_requests.warning(traceback.format_exc())
+            except:
+                logger_requests.warning(traceback.format_exc())
+    except:
+        logger_.warning(traceback.format_exc())
 
 def hyperlinkurlorip(iporurl: str):
     # Regular expression pattern for IPv4 addresses
@@ -256,6 +332,23 @@ async def restarttime_click(interaction: discord.Interaction):
                 await interaction.response.send_message(f"The server restarts {dctimestamp(dict(row).get('time'),'R')} ({dctimestamp(dict(row).get('time'),'f')}).")
                 return
 
+@bot.hybrid_command(name='uptime',description="Shows how long the bot has been online.")
+async def uptime(ctx: commands.Context):
+    await ctx.defer(ephemeral=True)
+    await ctx.reply(f"The bot started {dctimestamp(currentdate,'R')} ({dctimestamp(currentdate,'f')}).",delete_after=5.0 if ctx.interaction is None else None)
+
+
+@bot.hybrid_command(name="ping",description="See what the bot's ping is.",) #Add the guild ids in which the slash command will appear. If it should be in all, remove the argument, but note that it will take some time (up to an hour) to register the command if it's for all guilds.
+async def ping(ctx: commands.Context):
+    msg: Optional[discord.Message] = None
+    a: float = datetime.datetime.now().timestamp()
+    if ctx.interaction is None: await ctx.message.add_reaction(str(emojidict.get('pong')))
+    else: msg = await ctx.reply("Testing ping...")
+    b: float = datetime.datetime.now().timestamp()
+    if msg: await msg.edit(content=f"{emojidict.get('pong')} Pong! Latency is `{str(bot.latency*1000)}`ms (edit time `{round(b-a,14)}`).")
+    else: await ctx.reply(f"{emojidict.get('pong')} Pong! Latency is `{str(bot.latency*1000)}`ms (edit time `{round(b-a,14)}`).")
+    logger_.info(f"Latency is {str(bot.latency*1000)}ms (edit time {round(b-a,20)}).")
+
 async def showunlinked():
     async with asqlite.connect('users.db') as conn:
         async with conn.cursor() as cursor:
@@ -265,7 +358,6 @@ async def showunlinked():
             async for user in (bot.get_guild(1122231942453141565)).fetch_members(limit=100):
                 if not user.bot:
                     users.append(user.id)
-
             returnv = ""
             await cursor.execute("SELECT * FROM Users")
             for row in await cursor.fetchall():
@@ -297,7 +389,7 @@ async def populaterestarttimes():
                     logger_db.warning(f"Could not populate restart time for {dict(row).get('servername')}.")
             
             #await cursor.execute("INSERT INTO RestartTimes (datelogged, lastupdated, servername, time) VALUES (?,?,?,?)",(int(datetime.datetime.now().timestamp()),int(datetime.datetime.now().timestamp()),"click",1679969675))
-                
+       
             
 @bot.event
 async def on_ready():
@@ -348,10 +440,12 @@ reaction_roles: dict[str | None, tuple[int, str]] = {
 gamertag_msg = None
 msgcount = 0
 
+
+
 @bot.event
 async def on_message(message: discord.Message):
     global gamertag_msg, msgcount
-
+    
     if message.author == bot.user: return
 
     gamertags = 1124152862411341894
@@ -491,57 +585,63 @@ async def unlink_menu(interaction: discord.Interaction, user: discord.Member):
     except:
         traceback.print_exc()
 
-@tree.context_menu(name="Create Help Thread")
-async def create_help_thread(interaction: discord.Interaction, message: discord.Message):
-    HELP_CHANNEL =  1150849190293950544
+# @tree.context_menu(name="Create Help Thread")
+# async def create_help_thread(interaction: discord.Interaction, message: discord.Message):
+#     HELP_CHANNEL =  1150849190293950544
+#     try:
+#         if interaction.guild is None: 
+#             await interaction.response.send_message("You can't create a help thread in a DM!",ephemeral=True)
+#             return
+#         await interaction.response.defer(thinking=True)
+#         help_ch = interaction.guild.get_channel(HELP_CHANNEL)
+#         if isinstance(help_ch, discord.CategoryChannel) or help_ch is None: return
+#         wbs = await help_ch.webhooks()
+#         wb = None
+#         for wb_ in wbs:
+#             if wb_.name.lower() == "helper":
+#                 wb = wb_
+#                 break
+#             if len(wbs) == 1:
+#                 wb = wb_
+#         if wb is None:
+#             wb = await help_ch.create_webhook(name="Helper")
+#         if not isinstance(help_ch,discord.ForumChannel): return
+#         th = await help_ch.create_thread(reason=f"Help thread for {message.author} (ran by {interaction.user})",
+#         name=message.content if len(message.content) <= 100 else f"Help thread for {message.author}",content=f"{message.jump_url}\n{message.content}")
+#         if not isinstance(th[0], discord.Thread): return
+#         await th[1].delete()
+#         await th[0].add_user(message.author)
+#         await wb.send(content=f"{message.jump_url}\n{message.content}",username=message.author.display_name,avatar_url=message.author.avatar.url,thread=th[0])
+#         #await th[0].purge(limit=1,check=lambda x: x.is_system())
+#         await interaction.followup.send(f"Created help thread for {message.author}!",ephemeral=True)
+#     except:
+#         traceback.print_exc()
+#         logger_.warning(traceback.format_exc())
+
+
+@tree.context_menu(name='Purge to here')
+#@commands.has_permissions(manage_messages=True)
+#@commands.guild_only()
+async def purge_to_here(interaction: discord.Interaction, message: discord.Message):
+    await interaction.response.defer(ephemeral=True)
     try:
-        if interaction.guild is None: 
-            await interaction.response.send_message("You can't create a help thread in a DM!",ephemeral=True)
-            return
-        await interaction.response.defer(thinking=True)
-        help_ch = interaction.guild.get_channel(HELP_CHANNEL)
-        if isinstance(help_ch, discord.CategoryChannel) or help_ch is None: return
-        wbs = await help_ch.webhooks()
-        wb = None
-        for wb_ in wbs:
-            if wb_.name.lower() == "helper":
-                wb = wb_
-                break
-            if len(wbs) == 1:
-                wb = wb_
-        if wb is None:
-            wb = await help_ch.create_webhook(name="Helper")
-        if not isinstance(help_ch,discord.ForumChannel): return
-        th = await help_ch.create_thread(reason=f"Help thread for {message.author} (ran by {interaction.user})",
-        name=message.content if len(message.content) <= 100 else f"Help thread for {message.author}",content=f"{message.jump_url}\n{message.content}")
-        if not isinstance(th[0], discord.Thread): return
-        await th[1].delete()
-        await th[0].add_user(message.author)
-        await wb.send(content=f"{message.jump_url}\n{message.content}",username=message.author.display_name,avatar_url=message.author.avatar.url,thread=th[0])
-        #await th[0].purge(limit=1,check=lambda x: x.is_system())
-        await interaction.followup.send(f"Created help thread for {message.author}!",ephemeral=True)
-    except:
-        traceback.print_exc()
-        logger_.warning(traceback.format_exc())
-    
+        msgs = await interaction.channel.purge(limit=100,after=message.created_at)
+        try:
+            await message.delete()
+            msgs.append(message)
+        except: pass
+        await interaction.followup.send(f"Purged {len(msgs)} message{'s' if len(msgs) != 1 else ''}.",ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("I don't have permission to do that.",ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}",ephemeral=True)
 
 
 @bot.command("invite",description="invite the bot to your server",hidden=True)
 @commands.is_owner()
 async def invite(ctx: commands.Context):
-    if ctx.guild is None:
-        await ctx.message.reply("You can't invite the bot to a DM!")
-        return
     if await bot.is_owner(ctx.author):
         await ctx.reply(discord.utils.oauth_url(bot.user.id,permissions=ctx.guild.me.guild_permissions),ephemeral=True)
-
-@bot.command("setvcstatus",description="Set a VC status",hidden=True)
-@commands.is_owner()
-async def setvcstatus(ctx: commands.Context, *, status: str):
-    if ctx.author.voice is None:
-        await ctx.reply("You aren't in a VC!",ephemeral=True)
-        return
-    await ctx.author.voice.channel.connect()
 
 def get_priority(value):
     category_priority = {
@@ -557,6 +657,9 @@ def get_priority(value):
     return 4
 
 embmsg_2: discord.Message = None
+embmsg_3: discord.Message = None
+ch = None
+ch2 = None
 
 admins = ["Tryphara","Catinbetween"]
 head_mods = ["theGod_17"]
@@ -573,108 +676,121 @@ players_dict = {
 staff = admins + head_mods + mods + jr_mods
 
 mcserverinfo = None
-
-@tasks.loop(seconds=20)
+@tasks.loop(seconds=10)
 async def infloop2():
     try:
-        global embmsg_2, mcserverinfo
+        global embmsg_2, embmsg_3, ch, ch2
         a = datetime.datetime.now()
-        try:
-            if mcserverinfo is None: mcserverinfo = await (await bot.fetch_guild(1122231942453141565)).fetch_channel(1133245103306186865)
-            server = mcstatus.JavaServer("TheClick.mcserver.us",port=25565)
-            #query = await server.async_query()
+        for serverip in ["TheClick.mcserver.us","132.145.29.252"]:
+            try:
+                if ch is None:
+                    ch = await (await bot.fetch_guild(1122231942453141565)).fetch_channel(1133245103306186865)
+                if ch2 is None:
+                    ch2 = await (await bot.fetch_guild(1029151630215618600)).fetch_channel(1153205238992490526)
+                server = mcstatus.JavaServer(serverip)
+                #query = await server.async_query()
 
-            stats = await server.async_status()
-            color: discord.Colour = discord.utils.MISSING
-            emoji = None
-            emoji_msg = ""
-            if stats.players.online > 30:
-                color = discord.Colour.blue() 
-                emoji = emojidict.get('blue')
-                emoji_msg = "The server is over capacity!"
-            elif stats.players.online == 30: 
-                color = discord.Colour.red()
-                emoji = emojidict.get('red')
-                emoji_msg = "The server is full!"
-            elif stats.players.online >= 28: 
-                color = discord.Colour.yellow()
-                emoji = emojidict.get('yellow')
-                emoji_msg = "The server is almost full!"
-            else: 
-                color = discord.Colour.green()
-                emoji = emojidict.get('green')
-                emoji_msg = "The server is open!"
+                stats = await server.async_status()
+                color: discord.Colour = discord.utils.MISSING
+                emoji = None
+                emoji_msg = ""
+                if serverip == "TheClick.mcserver.us":
+                    if stats.players.online > 30:
+                        color = discord.Colour.blue() 
+                        emoji = emojidict.get('blue')
+                        emoji_msg = "The server is over capacity!"
+                    elif stats.players.online == 30: 
+                        color = discord.Colour.red()
+                        emoji = emojidict.get('red')
+                        emoji_msg = "The server is full!"
+                    elif stats.players.online >= 28: 
+                        color = discord.Colour.yellow()
+                        emoji = emojidict.get('yellow')
+                        emoji_msg = "The server is almost full!"
+                    else: 
+                        color = discord.Colour.green()
+                        emoji = emojidict.get('green')
+                        emoji_msg = "The server is open!"
 
-            desc = f'''Server Info:
-    `{server.address.host} | Port {server.address.port}`
-    `{stats.raw.get('description').get('text')}`
-    Version: `{stats.version.name}`, Protocol `{stats.version.protocol}`
-    Latency: `{round(stats.latency,8)}`ms
-    Enforces Secure Chat: {emojidict.get(bool(stats.raw.get('version').get('enforcesSecureChat')))}
-    Players: {stats.players.online}/{stats.players.max} {emoji} {emoji_msg}\n'''
-            emb2 = makeembed(title="Information",description="The information presented may not be completely up to date or completely accurate. Keep this in mind when viewing the above stats.",color=discord.Colour.red())
-            players = []
-            e = await (await mcstatus.JavaServer.async_lookup('TheClick.mcserver.us')).async_status()
+                desc = f'''Server Info:
+            `{server.address.host} | Port {server.address.port}`
+            `{stats.raw.get('description').get('text')}`
+            Version: `{stats.version.name}`, Protocol `{stats.version.protocol}`
+            Latency: `{round(stats.latency,8)}`ms
+            Enforces Secure Chat: {emojidict.get(bool(stats.raw.get('version').get('enforcesSecureChat')))}
+            Players: {stats.players.online}/{stats.players.max}{' '+emoji+' ' if emoji else ""}{emoji_msg if emoji_msg else ''}\n'''
+                emb2 = makeembed(title="Information",description="The information presented may not be completely up to date or completely accurate. Keep this in mind when viewing the above stats.",color=discord.Colour.red())
+                players = []
+                e = mcstatus.JavaServer.lookup(serverip).status()
 
-            for player in e.players.sample:
-                players.append((player.name, player.uuid))
-            
-            requestlist = []
-            for _ in range(1,16):
-                for __ in python_mcstatus.statusJava('TheClick.mcserver.us',).players.list: 
-                    requestlist.append((__.name_raw, __.uuid))
-                await asyncio.sleep(.1)
-            requestlist.sort(key=lambda x: x[0])
-            requestlist = list(set(requestlist))
-            for player in requestlist:
-                players.append(player)
-            players = list(set(players))
-            #print(len(players))
-            #print(len(e.players.sample))
-            #players.sort(key=lambda x: (get_priority(x)))
-            players.sort(key=lambda x: x[0].lower())
+                if e.players.sample is not None:
+                    for player in e.players.sample:
+                        players.append((player.name, player.uuid))
+                
+                requestlist = []
+                for _ in range(1,16):
+                    for __ in python_mcstatus.statusJava(serverip).players.list: 
+                        requestlist.append((__.name_raw, __.uuid))
+                    await asyncio.sleep(.1)
+                requestlist.sort(key=lambda x: x[0])
+                requestlist = list(set(requestlist))
+                for player in requestlist:
+                    players.append(player)
+                players = list(set(players))
+                #print(len(players))
+                #print(len(e.players.sample))
+                #players.sort(key=lambda x: (get_priority(x)))
+                players.sort(key=lambda x: x[0].lower())
+                if serverip == "TheClick.mcserver.us":
+                    async with asqlite.connect('users.db') as conn:
+                        async with conn.cursor() as cursor:
+                            for player in players:
+                                if player[0] in jr_mods:
+                                    player = (f"[Jr Mod] {player[0]}", player[1])
+                                elif player[0] in mods:
+                                    player = (f"[Mod] {player[0]}", player[1])
+                                elif player[0] in head_mods:
+                                    player = (f"[Head Mod] {player[0]}", player[1])
+                                elif player[0] in admins:
+                                    player = (f"[Admin] {player[0]}", player[1])
+                                desc += f"\n`{player[0]}`"
+                                await cursor.execute("SELECT * FROM Players WHERE mcuuid=?",(player[1],))
+                                ran = False
+                                for _ in await cursor.fetchall():
+                                    await cursor.execute("UPDATE Players SET lastupdated=? WHERE mcuuid=?",(int(datetime.datetime.now().timestamp()),player[1]))
+                                    break
+                                if not ran:
+                                    await cursor.execute("INSERT INTO Players (datelogged, lastupdated, mcusername, mcuuid) VALUES (?,?,?,?)",(int(datetime.datetime.now().timestamp()),int(datetime.datetime.now().timestamp()),player[0],player[1]))
 
-            async with asqlite.connect('users.db') as conn:
-                async with conn.cursor() as cursor:
-                    for player in players:
-                        if player[0] in jr_mods:
-                            player = (f"[Jr Mod] {player[0]}", player[1])
-                        elif player[0] in mods:
-                            player = (f"[Mod] {player[0]}", player[1])
-                        elif player[0] in head_mods:
-                            player = (f"[Head Mod] {player[0]}", player[1])
-                        elif player[0] in admins:
-                            player = (f"[Admin] {player[0]}", player[1])
-                        desc += f"\n`{player[0]}`"
-                        await cursor.execute("SELECT * FROM NewPlayers WHERE mcuuid=?",(player[1],))
-                        ran = False
-                        for _ in await cursor.fetchall():
-                            await cursor.execute("UPDATE NewPlayers SET lastupdated=? WHERE mcuuid=?",(int(datetime.datetime.now().timestamp()),player[1]))
-                            break
-                        if not ran:
-                            try: await cursor.execute("INSERT INTO NewPlayers (datelogged, lastupdated, mcusername, mcuuid) VALUES (?,?,?,?)",(int(datetime.datetime.now().timestamp()),int(datetime.datetime.now().timestamp()),player[0],player[1]))
-                            except: pass
-            with open("players.json","a+") as f:
-                f.write(f'''{int(datetime.datetime.now().timestamp())}: {stats.players.online},\n''')
-            #print(players)
-            embs = [makeembed_bot(title="Server Info",description=desc,color=color),emb2]
-            #embs[0].set_footer(text="Made by @aidenpearce3066 | Last updated")
-            if embmsg_2 is None:
-                async for msg in mcserverinfo.history(limit=5):
-                    if msg.author.id == bot.user.id:
-                        embmsg_2 = msg
-                        await embmsg_2.edit(embeds=embs)
-                if embmsg_2 is None:
-                    embmsg_2 = await mcserverinfo.send(embeds=embs)
-            else:
-                await embmsg_2.edit(embeds=embs)
-            b = datetime.datetime.now()
-            logger_mcserver.info(f"Updated server info in {b.timestamp()-a.timestamp()} seconds.")
-        except Exception as e:
-            raise e
+                    with open("players.json","a+") as f:
+                        f.write(f'''{int(datetime.datetime.now().timestamp())}: {stats.players.online},\n''')
+                #print(players)
+                embs = [makeembed(title="Server Info",description=desc,color=color if color is not discord.utils.MISSING else discord.Colour.blurple(),timestamp=datetime.datetime.now()),emb2]
+                embs[0].set_footer(text="Made by @aidenpearce3066 | Last updated")
+                if embmsg_2 is None and serverip == "TheClick.mcserver.us":
+                    async for msg in ch.history(limit=5):
+                        if msg.author == bot.user: 
+                            embmsg_2 = msg
+                            await embmsg_2.edit(embeds=embs)
+                    if embmsg_2 is None:
+                        embmsg_2 = await ch.send(embeds=embs)
+                elif serverip == "TheClick.mcserver.us":
+                    await embmsg_2.edit(embeds=embs)
+                if embmsg_3 is None and serverip == "132.145.29.252":
+                    async for msg in ch2.history(limit=5):
+                        if msg.author == bot.user: 
+                            embmsg_3 = msg
+                            await embmsg_3.edit(embeds=embs)
+                    if embmsg_3 is None:
+                        embmsg_3 = await ch2.send(embeds=embs)
+                elif serverip == "132.145.29.252":
+                    await embmsg_2.edit(embeds=embs)
+                b = datetime.datetime.now()
+                logger_mcserver.info(f"Updated server info in {b.timestamp()-a.timestamp()} seconds.")
+            except Exception as e:
+                raise e
     except:
         logger.error(f"Error in infloop2: {traceback.format_exc()}")
-
 
 class MinecraftType(Enum):
         bedrock = False
@@ -683,11 +799,13 @@ class MinecraftType(Enum):
 
 async def link(interaction: commands.Context | discord.Interaction, user: discord.User, mcusername: str, mctype: MinecraftType=MinecraftType.java):
     ctx: bool = type(interaction) == commands.Context
-    if ctx == commands.Context: interaction.user = interaction.author
+    if type(ctx) == commands.Context: interaction.user = interaction.author
     if interaction.user.id not in me:
         await interaction.response.send_message("This command is not for you.")
         return
-    if ctx: await interaction.defer()
+    
+    if ctx: 
+        await interaction.defer()
     else: await interaction.response.defer(thinking=True)
     async with asqlite.connect('users.db') as conn:
         async with conn.cursor() as cursor:
@@ -1051,10 +1169,10 @@ async def main():
     async with aiohttp.ClientSession() as session:
         async with aiohttp.ClientSession() as session2:
             async with aiohttp.ClientSession() as session3:
-                bot.session=session
-                bot.session2=session2
-                bot.session3=session3
-                sessions = [session,session2,session3]
+                global sessions
+                bot.session = session
+                bot.session2 = session2
+                bot.session3 = session3
                 bot.sessions = sessions
                 await createtables()
                 await populaterestarttimes()
@@ -1070,8 +1188,9 @@ async def main():
                         except Exception as e:
                             print(f'Failed to load extension {file[:-3]}.')
                             logger_.warning(traceback.format_exc())
+                sessions = [session,session2,session3]
                 await bot.load_extension('jishaku')
-                await bot.load_extension('aidenlib.cogs.helper_cog')
+                #await bot.load_extension('aidenlib.cogs.helper_cog')
                 await bot.start(token)
                 #await tree.sync()
 
