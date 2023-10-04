@@ -1177,7 +1177,7 @@ async def main():
                 await createtables()
                 await populaterestarttimes()
                 #voteloop.start()
-                infloop2.start()
+                #infloop2.start()
                 discord.utils.setup_logging(handler=handler)
                 #for m in pkgutil.iter_modules(path=["./"]):
                 #    if not m.name.startswith("_") and m.name != "main": await bot.load_extension(m.name)
