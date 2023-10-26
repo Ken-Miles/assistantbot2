@@ -24,6 +24,7 @@ import pkgutil
 from typing import Literal, Union, Optional
 from aidenlib.main import getorfetch_channel, getorfetch_user, getorfetch_guild, getorfetch_user, dchyperlink, dctimestamp, makeembed, makeembed_bot, dchyperlink, dctimestamp
 from pprint import pprint
+from mentionable_tree import MentionableTree
 
 with open('client.yml', 'r') as f: token = dict(yaml.safe_load(f)).get('token')
 
@@ -40,15 +41,14 @@ if __name__ == "__main__":
 {currentdate_epoch}""")
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix=commands.when_mentioned_or("?"),intents=intents,activity=discord.Activity(type=discord.ActivityType.watching,name='the Snugtown Discord'), status=discord.Status.do_not_disturb)
+bot = commands.Bot(command_prefix=commands.when_mentioned_or("?"),tree_cls=MentionableTree,intents=intents,activity=discord.Activity(type=discord.ActivityType.watching,name='you'), status=discord.Status.do_not_disturb)
 tree = bot.tree
-
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.ERROR)
 logging.getLogger('discord.http').setLevel(logging.INFO)
 
-handler = logging.FileHandler(filename='bot.log', encoding='utf-8', mode='a+')
+handler = logging.FileHandler(filename='bot.log', encoding='utf-8', mode='w')
 dt_fmt = '%Y-%m-%d %H:%M:%S'
 formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
 handler.setFormatter(formatter)
@@ -98,26 +98,30 @@ emojidict: dict[str | int, str] = {
 # global
 "x": '<a:X_:1046808381266067547>',
 'x2': "\U0000274c",
-"check": '<a:check_:1046808377373769810>',
+True: '<a:check_:1046808377373769810>',
+'check': '<a:check_:1046808377373769810>',
 "check2": '\U00002705',
 'L': "\U0001f1f1",
 'l': "\U0001f1f1",
 "salute": "\U0001fae1",
-
+'no': "\U0001f6ab",
+'numbers': '\U0001f522',
 "calendar": "\U0001f4c6",
 "notepad": "\U0001f5d2",
 "alarmclock": "\U000023f0",
 "timer": "\U000023f2",
-True: "<:check:1046808377373769810>",
 "maybe": "\U0001f937",
 False: "<a:X_:1046808381266067547>",
 "pong": "\U0001f3d3",
-
+'pencilpaper': '\U0001f4dd',
 'red': "\U0001f534",
 "yellow": "\U0001f7e1",
 "green": "\U0001f7e2",
 "blue": "\U0001f535",
 'purple': "\U0001f7e3",
+'gray': "",
+
+'mail': '\U0001f4ea',
 
 "headphones": "\U0001f3a7",
 
@@ -132,7 +136,7 @@ False: "<a:X_:1046808381266067547>",
 "laughing": "\U0001f923",
 "notfunny": "\U0001f610",
 
-1: "\U00000031"+"\U0000fe0f"+"\U000020e3",
+#1: "\U00000031"+"\U0000fe0f"+"\U000020e3",
 2: "\U00000032"+"\U0000fe0f"+"\U000020e3",
 3: "\U00000033"+"\U0000fe0f"+"\U000020e3",
 4: "\U00000034"+"\U0000fe0f"+"\U000020e3",
@@ -152,6 +156,8 @@ False: "<a:X_:1046808381266067547>",
 "back": "\U000025c0",
 "forward": "\U000025b6", # same as play
 "shuffle": "\U0001f500",
+
+'loading': '<a:loading:1165843833343451196>',
 }
 
 revemojidict = {value: key for key, value in emojidict.items()}
@@ -183,18 +189,18 @@ async def set_voice_status(channelorid: Union[discord.VoiceChannel, int], status
     "X-Super-Properties": "eyJvcyI6IkxpbnV4IiwiYnJvd3NlciI6IkZpcmVmb3giLCJkZXZpY2UiOiIiLCJzeXN0ZW1fbG9jYWxlIjoicnUtUlUiLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoWDExOyBMaW51eCB4ODZfNjQ7IHJ2OjEwOS4wKSBHZWNrby8yMDEwMDEwMSBGaXJlZm94LzExNy4wIiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTE3LjAiLCJvc192ZXJzaW9uIjoiIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6IiIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6IiIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjIyNzEwMiwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="})
     return r
 
-
-async def request_get(url: str,sessions=sessions) -> dict | None:
+async def request_get(url: str, **kwargs) -> dict | None:
     #sessions: list[aiohttp.ClientSession] = [bot.session, bot.session2, bot.session3]
     #global sessions
     requestcount: int = 0
+    sessions = [aiohttp.ClientSession(), aiohttp.ClientSession(), aiohttp.ClientSession()]
     for session in sessions:
         try:
             if requestcount == 2: logger_requests.info("session2")
             elif requestcount == 3: logger_requests.info("session3")
             try:
                 r = await session.get(url)
-                logger_requests.info(f"Request sent: {r.status} from {r.url}")
+                logger_requests.info(f"{'GET':<6} | Request sent: {r.status} from {r.url}")
                 if str(r.status).startswith("2"):
                     r = await r.json()
                     return r
@@ -215,68 +221,67 @@ async def request_get(url: str,sessions=sessions) -> dict | None:
 
 async def request_post(url: str, json: list | dict, normal: bool=False):
     headers = {'Content-Type': 'application/json'}
-    if normal:
+    sessions = [aiohttp.ClientSession(), aiohttp.ClientSession(), aiohttp.ClientSession()]
+    tr = 0
+    for session in sessions:
+        tr += 1
+        if tr > 1:
+            logger_requests.info(f"session{tr}")
         try:
-            r = await bot.session.post(url,json=Json.dumps(json), headers=headers)
-            r = await r.json()
-            return r
-        except Exception as e:
-            print(f"session2")
-            try:
-                r = await bot.session2.post(url,json=Json.dumps(json), headers=headers)
-                r = await r.json()
-                return r
-            except Exception as e:
-                print(f"session3")
-                try:
-                    r = await bot.session3.post(url,json=Json.dumps(json), headers=headers)
+            r = await session.post(url, json=json, headers=headers)
+            logger_requests.info(f"{'POST':<6} | Request sent: {r.status} from {r.url}")
+            if str(r.status).startswith("2"):
+                if normal:
+                    return r
+                else:
                     r = await r.json()
                     return r
-                except Exception as e:
-                    print(f"Exception: {e}")
-                    return None
-
-sessions = []
+            elif str(r.status).startswith("4"):
+                if r.status == 429:
+                    await asyncio.sleep(10)
+                    return await request_post(url, json)
+                if r.status == 404:
+                    raise ValueError("404")
+            else:
+                raise Exception(f"Status Code: {r.status}")
+        except ValueError:
+            raise ValueError
+        except Exception as e:
+            continue
 
 async def request_put(url, **kwargs):
-    try:
-        global sessions
-        if kwargs.get('sessions') != None: 
-            sessions = kwargs.get('sessions')
-            kwargs.pop('sessions')
-        requestcount: int = 0
-        for session in sessions:
+    sessions = [aiohttp.ClientSession(), aiohttp.ClientSession(), aiohttp.ClientSession()]
+    requestcount: int = 0
+    for session in sessions:
+        try:
+            #if session == bot.session2: logger_requests.info("session2")
+            #elif session == bot.session3: logger_requests.info("session3")
             try:
-                #if session == bot.session2: logger_requests.info("session2")
-                #elif session == bot.session3: logger_requests.info("session3")
-                try:
-                    r = await session.put(url, **kwargs)
-                    requestcount += 1
-                    logger_requests.info(f"{'PUT':<6} | Request sent: {r.status} from {r.url}")
-                    if str(r.status).startswith("2") and r.status != 204:
-                        try:
-                            r = await r.json()
-                        except:
-                            return await r.text()
-                        return r
-                    elif r.status == 204:
-                        return r.status
-                    elif str(r.status).startswith("4"):
-                        if r.status == 429:
-                            await asyncio.sleep(10)
-                            return await request_put(url, **kwargs)
-                        if r.status == 404:
-                            raise ValueError("404")
-                    else:
-                        raise Exception(f"Status Code: {r.status}")
-                except ValueError:
-                    raise ValueError
-                except Exception as e:
-                    logger_requests.warning(traceback.format_exc())
-            except:
+                r = await session.put(url, **kwargs)
+                requestcount += 1
+                logger_requests.info(f"{'PUT':<6} | Request sent: {r.status} from {r.url}")
+                if str(r.status).startswith("2") and r.status != 204:
+                    try:
+                        r = await r.json()
+                    except:
+                        return await r.text()
+                    return r
+                elif r.status == 204:
+                    return r.status
+                elif str(r.status).startswith("4"):
+                    if r.status == 429:
+                        await asyncio.sleep(10)
+                        return await request_put(url, **kwargs)
+                    if r.status == 404:
+                        raise ValueError("404")
+                else:
+                    raise Exception(f"Status Code: {r.status}")
+            except ValueError:
+                raise ValueError
+            except Exception as e:
                 logger_requests.warning(traceback.format_exc())
-    except:
-        logger_.warning(traceback.format_exc())
+        except:
+            logger_requests.warning(traceback.format_exc())
 
 def hyperlinkurlorip(iporurl: str):
     # Regular expression pattern for IPv4 addresses
@@ -389,7 +394,6 @@ async def populaterestarttimes():
                     logger_db.warning(f"Could not populate restart time for {dict(row).get('servername')}.")
             
             #await cursor.execute("INSERT INTO RestartTimes (datelogged, lastupdated, servername, time) VALUES (?,?,?,?)",(int(datetime.datetime.now().timestamp()),int(datetime.datetime.now().timestamp()),"click",1679969675))
-       
             
 @bot.event
 async def on_ready():
@@ -793,8 +797,8 @@ async def infloop2():
         logger.error(f"Error in infloop2: {traceback.format_exc()}")
 
 class MinecraftType(Enum):
-        bedrock = False
-        java = True
+    bedrock = False
+    java = True
 
 
 async def link(interaction: commands.Context | discord.Interaction, user: discord.User, mcusername: str, mctype: MinecraftType=MinecraftType.java):
@@ -1187,6 +1191,7 @@ async def main():
                             await bot.load_extension(f'{file[:-3]}')
                         except Exception as e:
                             print(f'Failed to load extension {file[:-3]}.')
+                            traceback.print_exc()
                             logger_.warning(traceback.format_exc())
                 sessions = [session,session2,session3]
                 await bot.load_extension('jishaku')

@@ -4,7 +4,7 @@ from discord.app_commands import Group
 from discord.ext import commands, tasks
 from yaml import Token
 from main import me, logger_, guilds
-from aidenlib.main import makeembed_bot, makeembed, getorfetch_channel, getorfetch_user, getorfetch_guild, dctimestamp, getorfetch_member
+from aidenlib.main import makeembed_bot, makeembed, getorfetch_channel, getorfetch_user, getorfetch_guild, dctimestamp
 from enum import Enum
 import asqlite
 import datetime
@@ -16,7 +16,6 @@ from typing import List, Optional, Tuple, Union, Dict, Literal
 import tortoise
 from tortoise import Tortoise, fields
 from tortoise.models import Model
-import pytz
 import io
 
 dt_fmt = '%Y-%m-%d %H:%M:%S'
@@ -121,7 +120,6 @@ class GuildSettings(Base):
     class Meta:
         table = "GuildSettings"
 
-
 class TicketCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -161,7 +159,7 @@ class TicketCog(commands.Cog):
         await interaction.defer()
         if ch is None: ch = interaction.channel
         if type(ch) not in [discord.TextChannel,discord.Thread]: await interaction.reply("This command can only be used in a ticket channel.",ephemeral=True)
-        await interaction.followup.send(view=ConfirmButton(func_confirm=ch.delete,func_cancel=pass_))
+        await interaction.followup.send(view=ConfirmButton(func_confirm=ch.delete))
 
     @ticket_group.command(name="save",description="Saves a ticket")
     @commands.guild_only()
@@ -232,8 +230,7 @@ class TicketCog(commands.Cog):
         else:
             file = await save_ticket(await getorfetch_channel(interaction.guild,ticket["chid"]))
             await interaction.reply(f"Saved Transcript, attached below:",ephemeral=True,file=file)
-
-    
+ 
     @ticket_group.command(name="tickets",description="Gets tickets for a user.")
     @commands.guild_only()
     async def ticket_gettickets(interaction: commands.Context, user: Optional[discord.User]=None):
@@ -261,7 +258,7 @@ class TicketCog(commands.Cog):
         emb = makeembed("Support Ticket",description="Open a ticket by pressing the below button to directly contact the Admin Team about your inquiry.",color=discord.Colour.brand_green())
         await ch.send(embed=emb,view=OpenTicketView())
 
-    @commands.hybrid_group(name='settings',description="Settings commands")
+    @commands.hybrid_group(name='ticketsettings',description="Settings commands")
     @app_commands.guilds(*guilds)
     async def settings_group(self, interaction: commands.Context): pass
 
@@ -322,16 +319,23 @@ class TicketCog(commands.Cog):
     #     app_commands.Choice(name="Blue",value=1),
     #     app_commands.Choice(name="Grey (default)",value=2),
     # ])
-    async def settings_addtickettype(self, interaction: commands.Context, name: str, color: Literal["Red","Green","Blue","Gray","Grey"]="Gray", emoji: Optional[str]=None):
+    async def settings_addtickettype(self, interaction: commands.Context, name: str, color: discord.ButtonStyle=discord.ButtonStyle.gray, emoji: Optional[str]=None):
         await interaction.defer()     
-        color_: discord.ButtonStyle = discord.ButtonStyle(color)   
+        if color is discord.ButtonStyle.url:
+            await interaction.reply("You can't use URL buttons.",ephemeral=True)
+            return
         try:
-            await TicketType.create(guildid=interaction.guild.id,tickettype=name,color=int(color_),emoji=emoji)
+            await TicketType.create(guildid=interaction.guild.id,tickettype=name,color=int(color),emoji=emoji)
         except:
             await interaction.reply(f"Failed to add ticket type {name} ({emoji if emoji else ''}) with color {color}",ephemeral=True)
             logger_.error(traceback.format_exc())
             return
         await interaction.reply(f"Added ticket type {name}{f' ({emoji})' if emoji else ''} with color {color}",ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+        await ctx.reply(f"Error: {error}",ephemeral=True)
+
 
 # class AidenTicketType(Enum):
 #     SUPPORT = 1
@@ -460,7 +464,6 @@ async def get_ticket(guild: Union[discord.Guild,int],user: Optional[discord.Memb
     elif num is not None:    returnv = await Ticket.filter(ticket_num=num,guildid=guild).first()
     elif chid is not None:   returnv = await Ticket.filter(chid=chid,guildid=guild).first()
     return dict(returnv)
-
 
 async def get_tickets(guild: Union[discord.Guild,int],user: Optional[discord.Member]=None, *, cursor: Optional[asqlite.Cursor]=None) -> List[dict] | None:
     # returnv = []
@@ -938,7 +941,8 @@ class ConfirmButton(discord.ui.View):
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message('Confirming...', ephemeral=True)
         self.value = True
-        await self.confirm_func()
+        if self.confirm_func is not None:
+            await self.confirm_func()
         self.stop()
     
 
@@ -948,7 +952,8 @@ class ConfirmButton(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message('Cancelling...', ephemeral=True)
         self.value = False
-        await self.cancel_func()
+        if self.cancel_func is not None:
+            await self.cancel_func()
         self.stop()
 
 class ConfirmTicketButton(discord.ui.View):
@@ -980,9 +985,6 @@ class ConfirmTicketButton(discord.ui.View):
             await self.confirm_func()
         await interaction.followup.send(f"Locked Ticket.")
         self.stop()
-
-    
-
 
     # This one is similar to the confirmation button except sets the inner value to `False`
     @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red)
@@ -1068,4 +1070,5 @@ async def main():
     #                 row['transcript'] = f.read()
     #             await Ticket.create(**row)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

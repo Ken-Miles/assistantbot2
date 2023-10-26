@@ -218,7 +218,7 @@ Players: {stats_1.players.online}/{stats_1.players.max}\n'''
                 try:
                     await Playerlog.create(servername=server.get('address'),serverip=server_1.address,mcusername=player[0],mcuuid=player[1])
                 except IntegrityError: 
-                    await (await Playerlog.filter(serverip=server_1.address,mcusername=player[0]))[0].update_from_dict(dict()lastseen=datetime.datetime.now(datetime.timezone.utc))
+                    await (await Playerlog.filter(serverip=server_1.address,mcusername=player[0]))[0].update_from_dict(lastseen=datetime.datetime.now(datetime.timezone.utc))
 
 
             

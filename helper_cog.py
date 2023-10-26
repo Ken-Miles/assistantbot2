@@ -281,7 +281,6 @@ class BasicCog(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"Exception: `{e}`",ephemeral=True)
 
-
     @commands.hybrid_command(name='purge',description='boom',hidden=True)
     @app_commands.guilds(*guilds)
     @is_me()

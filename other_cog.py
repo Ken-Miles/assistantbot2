@@ -1,26 +1,30 @@
 import discord
-from discord import VoiceChannel, app_commands, guild, http
-from discord.ext import commands, tasks
-from discord.app_commands import Group
-from aidenlib.main import makeembed_bot, dchyperlink
+from discord.ext import commands
+from discord import app_commands
 import inspect
 import os
-from main import set_voice_status, token, sessions
-from typing import Union
+from main import set_voice_status
+import unicodedata
+from typing import Optional
+
 
 class OtherCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
     
-    @commands.is_owner()
     @commands.command(name='source',description="Displays my full source code or for a specific command.")
-    async def source(self, ctx: commands.Context, *, command: str = None): # type: ignore
+    @commands.is_owner()
+    @app_commands.describe(command="The command to get the source code for.")
+    async def source(self, ctx: commands.Context, *, command: Optional[str] = None): # type: ignore
         """Displays my full source code or for a specific command.
 
         To display the source code of a subcommand you can separate it by
         periods, e.g. tag.create for the create subcommand of the tag command
         or by spaces.
+
+        Original command written by @danny on Discord. 
+        Found at https://github.com/Rapptz/RoboDanny/blob/rewrite/cogs/meta.py#L404-L445. 
         """
         source_url = "https://github.com/Ken-Miles/assistantbot2"
         branch = "main"
@@ -58,14 +62,34 @@ class OtherCog(commands.Cog):
         final_url = f'<{source_url}/blob/{branch}/{location}#L{firstlineno}-L{firstlineno + len(lines) - 1}>'
         await ctx.reply(final_url)
     
+    @commands.hybrid_command(name='charinfo',description="Shows you information about a number of characters.")
+    @commands.is_owner()
+    @app_commands.describe(characters="The characters to get information about.")
+    async def charinfo(self, ctx: commands.Context, *, characters: str):
+        """Shows you information about a number of characters.
+
+        Only up to 25 characters at a time.
+
+        Original command written by @danny on Discord. Slight modifications by me.
+        Found at https://github.com/Rapptz/RoboDanny/blob/rewrite/cogs/meta.py#L298-L313. 
+        """
+
+        def to_string(c):
+            digit = f'{ord(c):x}'
+            name = unicodedata.name(c, 'Name not found.')
+            return f'`\\U{digit:>08}`: {name} - {c} \N{EM DASH} <http://www.fileformat.info/info/unicode/char/{digit}>'
+
+        msg = '\n'.join(map(to_string, characters))
+        if len(msg) > 2000:
+            return await ctx.reply('Output too long to display.')
+        await ctx.reply(msg,ephemeral=True)
+
     @commands.command(name='voicestatus',description="Set the voice description for a VC.")
     #@commands.has_permissions(set_voice_channel_status=True)
     #@commands.bot_has_permissions(set_voice_channel_status=True)
     @commands.is_owner()
+    @app_commands.describe(channel="The voice channel to set the status for.", status="The status to set. Leave empty to remove status.")
     async def changevoicestatus(self, ctx: commands.Context, channel: discord.VoiceChannel, *, status: str):
-        if ctx.guild is None:
-            await ctx.reply("This command cannot be used in DMS.",delete_after=5)
-            return
         await ctx.defer()
         status = status.replace('""',"")
         try:

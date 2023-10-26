@@ -72,9 +72,9 @@ class MinecraftType(Enum):
         bedrock = False
         java = True
 
-class MinecraftCog(commands.Cog):
+class MinecraftCog2(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot    
+        self.bot = bot
 
     async def profile(self, interaction: commands.Context, user: discord.User=None, mcusername: str=None):
         if type(interaction) == commands.Context: interaction.user = interaction.author
@@ -272,4 +272,5 @@ async def lookup_user(mcusername: str):
             return data
 
 async def setup(bot):
-    await bot.add_cog(MinecraftCog(bot))
+    return
+    await bot.add_cog(MinecraftCog2(bot))
