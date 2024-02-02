@@ -1,9 +1,10 @@
-import discord
-from discord import app_commands, ui
-from discord.app_commands import Group
-from discord.ext import commands, tasks
+from __future__ import annotations
+
 import traceback
-from main import logger_forums, me
+
+import discord
+
+from utils import CogU, ContextU, generic_autocomplete
 
 new_town_ideas = 1130364285491626055
 town_jobs = 1130366266247491654
@@ -19,35 +20,12 @@ solvable = [new_town_ideas, town_jobs, auction_house, mc_suggestions, shops, bot
 
 
 async def solved_autocomplete(interaction: discord.Interaction, current: str):
-    if interaction.user.id == me:
-        exact_matches = []
-        other_matches = []
-        not_matches = []
-        current = current.lower().strip()
-        solved_tags = ["Solved", "Completed", "Sold", "Closed", "Approved", "Implemented"]
-        solved_tags2 = []
-        for tag in solved_tags: solved_tags2.append(tag.lower().strip())
-
-        for tag in interaction.channel.parent.available_tags:
-            tag_ = tag
-            tag = tag.name.lower().strip()
-            if tag.startswith(current.lower()):
-                exact_matches.append(app_commands.Choice(name=tag, value=tag_))
-            elif current.lower() in tag_:
-                other_matches.append(app_commands.Choice(name=tag, value=tag_))
-            else: not_matches.append(app_commands.Choice(name=tag, value=tag_))
-
-            if len(exact_matches) + len(other_matches) >= 25:
-                break
-        
-        exact_matches.extend(other_matches)
-        exact_matches.extend(not_matches)
-
-        return exact_matches
+    solved_tags = ["Solved", "Completed", "Sold", "Closed", "Approved", "Implemented"]
+    return await generic_autocomplete(current, solved_tags, interaction)
 
 
 
-class ForumCog(commands.Cog):
+class ForumCog(CogU, name="Forums"):
     def __init__(self, bot):
         self.bot = bot
     
@@ -77,7 +55,7 @@ class ForumCog(commands.Cog):
     @commands.hybrid_command(name='solved',description="Marks a thread as solved.",hidden=True,guilds=[discord.Object(x) for x in [1135603095385153696,1133473132418699366]])
     @app_commands.guilds(1133473132418699366,1029151630215618600)
     @app_commands.autocomplete(tag=solved_autocomplete)
-    async def solved_cmd2(self, ctx: commands.Context, ch: discord.Thread=None, tag: str=None):
+    async def solved_cmd2(self, ctx: ContextU, ch: discord.Thread=None, tag: str=None):
         if ch is None: ch = ctx.channel
         if type(ch) != discord.Thread:
             await ctx.reply("This command can only be used in a thread.")
@@ -100,7 +78,7 @@ class ForumCog(commands.Cog):
             except:
                 traceback.print_exc()
 
-    async def solved(self, ch: discord.Thread, ctx: commands.Context | discord.Interaction=None, tag_: str=None):
+    async def solved(self, ch: discord.Thread, ctx: ContextU | discord.Interaction=None, tag_: str=None):
        #await ctx.defer()
 
         if ch.guild.id == 1122231942453141565:
@@ -112,7 +90,7 @@ class ForumCog(commands.Cog):
             snugmc_suggestions = 1133889335637311578
             clickmc_suggestions = 1135604021424566292
             bot_suggestions = 1147018651862573116
-        #if type(ctx) == commands.Context:
+        #if type(ctx) == ContextU:
             #await ctx.reply("Marking this thread as solved...")
         solved_tag = None
         for tag in ch.parent.available_tags:
@@ -137,7 +115,7 @@ class ForumCog(commands.Cog):
             await ch.send("This thread has been marked as solved/sold. If you need to reopen it, please contact a moderator.")
         else:
             await ctx.reply("This thread has been marked as solved/sold. If you need to reopen it, please contact a moderator.")
-        if type(ctx) == commands.Context:
+        if type(ctx) == ContextU:
             await ch.edit(archived=True, locked=True, reason=f"Thread marked as solved/sold by {ctx.author}")
         else:
             await ch.edit(archived=True, locked=True, reason=f"Thread marked as solved/sold by {self.bot.user}",)
@@ -170,7 +148,7 @@ class ForumCog(commands.Cog):
 
     @commands.hybrid_command(name='unsolved',description="Unmarks a thread as solved.",hidden=True,guilds=[discord.Object(x) for x in [1135603095385153696,1133473132418699366]])
     @app_commands.guilds(1133473132418699366,1029151630215618600)
-    async def unsolved_cmd(self, ctx: commands.Context, ch: discord.Thread=None):
+    async def unsolved_cmd(self, ctx: ContextU, ch: discord.Thread=None):
         if ch is None: ch = ctx.channel
         if type(ch) != discord.Thread:
             await ctx.send("This command can only be used in a thread.")
@@ -201,11 +179,11 @@ class ForumCog(commands.Cog):
             except:
                 traceback.print_exc()
 
-    async def unsolved(self, ch: discord.Thread, ctx: commands.Context | discord.Interaction=None):
+    async def unsolved(self, ch: discord.Thread, ctx: ContextU | discord.Interaction=None):
         #if ch.guild.id == 1122231942453141565:
 
 
-        #if type(ctx) == commands.Context:
+        #if type(ctx) == ContextU:
         #    await ctx.message.reply("Marking this thread as unsolved...")
         solved_tag = None
         for tag in ch.parent.available_tags:
@@ -230,7 +208,7 @@ class ForumCog(commands.Cog):
                 if ctx.channel != ch:
                     await ctx.send(f"Unmarked {ch.mention} as solved/sold.")
                 await ch.send("This thread has been unmarked as solved/sold.")
-        if type(ctx) == commands.Context:
+        if type(ctx) == ContextU:
             await ch.edit(archived=False, locked=False, reason=f"Thread marked as unsolved/sold by {ctx.author}")
         elif type(ctx) == discord.Interaction:
             await ch.edit(archived=False, locked=False, reason=f"Thread marked as unsolved/sold by {ctx.user}")

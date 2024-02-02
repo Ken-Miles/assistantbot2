@@ -9,9 +9,10 @@ from discord.ext import commands
 from aidenlib.main import getorfetch_channel, getorfetch_guild, getorfetch_user, makeembed, makeembed_bot
 import datetime
 import main
-from main import formatter, emojidict
+from main import formatter
 import traceback
 from typing import Optional
+from utils import CogU, ContextU, emojidict, makeembed_bot
 
 memes_handler = logging.FileHandler(filename='memes.log', encoding='utf-8', mode='a+')
 memes_handler.setFormatter(formatter)
@@ -26,14 +27,7 @@ SNUG_MEMES = 1162813785346686976
 REGULAR_MEMES = 867990633791508490
 MC_SERVER_INFO = 1149198803258322984
 
-def is_me():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        if isinstance(interaction.client, commands.Bot):
-            return await interaction.client.is_owner(interaction.user)
-        return False
-    return app_commands.check(predicate)
-
-class MemeCog(commands.Cog):
+class MemeCog(CogU, name="Memes"):
     bot: commands.Bot
 
     def __init__(self, bot: commands.Bot):
@@ -41,7 +35,7 @@ class MemeCog(commands.Cog):
     
     async def getmeme(self) -> discord.Embed:
         try: 
-            r = await main.request_get("https://meme-api.com/gimme",sessions=[aiohttp.ClientSession()])
+            r = await self._get("https://meme-api.com/gimme")
             if r is None: return
         except: return
         data = r
@@ -63,8 +57,8 @@ class MemeCog(commands.Cog):
             logger_memes.error(traceback.format_exc())
     
     @commands.command(name='postmeme')
-    @is_me()
-    async def postmeme(self, ctx: commands.Context, *, url: Optional[str]=None):
+    @commands.is_owner()
+    async def postmeme(self, ctx: ContextU, *, url: Optional[str]=None):
         try:
             if url is None:
                 await ctx.send(embed=await self.getmeme())

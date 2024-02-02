@@ -1,26 +1,25 @@
-import discord
-from discord import app_commands, guild, http
-from discord.ext import commands, tasks
-from discord.app_commands import Group
-from discord.utils import get
-from collections import defaultdict
-from aidenlib.main import makeembed_bot, dchyperlink, dctimestamp
-import os
-from mutagen.mp4 import delete
-import yt_dlp
-from pathlib import Path
-from ast import alias
+from __future__ import annotations
+
 import asyncio
-from main import guilds, set_voice_status, logger_, logger_music, emojidict
 import traceback
 import re
 import datetime
+from collections import defaultdict
+import os
+from pathlib import Path
+
+import discord
+from discord import app_commands, guild
+from discord.ext import commands
+from discord.utils import get
+import yt_dlp
+
+from utils import CogU, ContextU, GUILDS, makeembed_bot, dchyperlink, emojidict
 
 MUSIC_MAX_DURATION_MINS = 20
 MUSIC_QUEUE_PER_PAGE = 10
 
 class Queue(list):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._current_song = None
@@ -172,17 +171,17 @@ def set_str_len(s: str, length: int):
 
     return s.ljust(length)[:length]
 
-class MusicCog(commands.Cog):
+class MusicCog(CogU, name="Music"):
     def __init__(self, bot):
         self.bot = bot
         self.music_queues = defaultdict(Queue)
 
     @commands.hybrid_group(name='music',description="Music commands")
-    @app_commands.guilds(*guilds)
-    async def music(self, ctx: commands.Context): pass
+    @app_commands.guilds(*GUILDS)
+    async def music(self, ctx: ContextU): pass
 
     @music.command(name='play')
-    async def play(self, ctx: commands.Context, *, urlorsong: str):
+    async def play(self, ctx: ContextU, *, urlorsong: str):
         '''Adds a song to the queue either by YouTube URL or YouTube Search.'''
         if ctx.guild is None: 
             await ctx.reply("This command can only be used in a server.",delete_after=5,ephemeral=True)
@@ -224,7 +223,7 @@ class MusicCog(commands.Cog):
         music_queue.append(song_)
         emb = makeembed_bot(title="Song Queued",description=f"Sucessfully queued song: {dchyperlink(song_.url,song_.title)}",color=discord.Colour.green())
         await ctx.send(embed=emb)
-        logger_music.info(f"Queued song: {song_.title} | Queued by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+        #logger_music.info(f"Queued song: {song_.title} | Queued by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
 
         if voice is None or not voice.is_connected():
             await channel.connect()
@@ -233,7 +232,7 @@ class MusicCog(commands.Cog):
 
     @music.command(name='stop',description="Stops playback and clears the queue.")
     @commands.has_permissions(administrator=True)
-    async def stop(self, ctx: commands.Context):
+    async def stop(self, ctx: ContextU):
         '''Admin command that stops playback of music and clears out the music queue.'''
         
         if ctx.guild is None:
@@ -254,11 +253,11 @@ class MusicCog(commands.Cog):
             if ch is None: # user not admin or in vc
                 await ctx.reply("You're not in a voice channel with me.",delete_after=5,ephemeral=True)
                 return
-            await set_voice_status(ch, None, [self.bot.session, self.bot.session2, self.bot.session3])
+            #await set_voice_status(ch, None, [self.bot.session, self.bot.session2, self.bot.session3])
             await voice.disconnect()
             emb = makeembed_bot(title="Music Stopped",description="Stopped playback and cleared queue.",color=discord.Colour.red())
             await ctx.reply(embed=emb)
-            logger_music.info(f"Stopped playback | Stopped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+            ##logger_music.info(f"Stopped playback | Stopped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
         elif voice := get(self.bot.voice_clients, guild=guild) is not None:
             if voice.channel is not None and len(voice.channel.members) <= 0:
                 await ctx.reply("You're not in my voice channel.",delete_after=5,ephemeral=True)
@@ -266,7 +265,7 @@ class MusicCog(commands.Cog):
             await ctx.reply("You're not in my VC.")
 
     @music.command(name='skip',description="Puts in your vote to skip the currently playing song.")
-    async def skip(self, ctx: commands.Context):
+    async def skip(self, ctx: ContextU):
         '''Puts in your vote to skip the currently played song.'''
 
         if ctx.guild is None: 
@@ -288,7 +287,7 @@ class MusicCog(commands.Cog):
                 await ctx.reply('Skipping song...')
                 await ctx.send(f'Skipping song: {queue.current_song.title}')
                 voice.stop()
-                logger_music.info(f"Skipped song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) (Admin)")
+                #logger_music.info(f"Skipped song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) (Admin)")
         else:
             queue = self.music_queues.get(ctx.guild)
 
@@ -313,14 +312,14 @@ class MusicCog(commands.Cog):
                 await ctx.reply('Skipping song after successful vote...')
                 await ctx.send(f'Skipping song: {queue.current_song.title}')
                 voice.stop()
-                logger_music.info(f"Skipped song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}). ({len(queue.skip_voters)}/{required_votes})")
+                #logger_music.info(f"Skipped song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}). ({len(queue.skip_voters)}/{required_votes})")
             else:
                 await ctx.reply(f'You voted to skip this song. `{required_votes - len(queue.skip_voters)}` more votes are '
                                 f'required.')
-                logger_music.info(f"Voted to skip song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) ({len(queue.skip_votes)}/{required_votes})")
+                #logger_music.info(f"Voted to skip song: {self.music_queues.get(ctx.guild).current_song.title} | Skipped by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) ({len(queue.skip_votes)}/{required_votes})")
 
     @music.command(name='songinfo',description="Print out more information on the song currently playing.")
-    async def songinfo(self, ctx: commands.Context, song_index: int = 0):
+    async def songinfo(self, ctx: ContextU, song_index: int = 0):
         '''Print out more information on the song currently playing.'''
 
         if ctx.guild is None:
@@ -337,11 +336,11 @@ class MusicCog(commands.Cog):
 
         embed = queue.get_embed(song_index)
         await ctx.reply(embed=embed)
-        logger_music.info(f"Sent song info for {queue.current_song.title} | Requested by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+        #logger_music.info(f"Sent song info for {queue.current_song.title} | Requested by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
 
     # combined admin skip into here
     @music.command(name='remove',description="Removes the last song you requested from the queue, or a specific song if queue position specified.")
-    async def remove(self, ctx: commands.Context, song_id: int = None):
+    async def remove(self, ctx: ContextU, song_id: int = None):
         '''Removes the last song you requested from the queue, or a specific song if queue position specified.'''
 
         if ctx.guild is None:
@@ -371,7 +370,7 @@ class MusicCog(commands.Cog):
 
             queue.pop(song_id - 1)
             await ctx.reply(f'Removed {song.title} from the queue.')
-            logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) (Admin)")
+            #logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id}) (Admin)")
             return
 
         if not self.client_in_same_channel(ctx.author, ctx.guild):
@@ -385,7 +384,7 @@ class MusicCog(commands.Cog):
                 if ctx.author.id == song.requested_by.id:
                     queue.pop(index)
                     await ctx.reply(f'Song "{song.title}" removed from queue.')
-                    logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+                    #logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
                     return
         else:
             queue = self.music_queues.get(ctx.guild)
@@ -399,12 +398,12 @@ class MusicCog(commands.Cog):
             if ctx.author.id == song.requested_by.id:
                 queue.pop(song_id - 1)
                 await ctx.reply(f'Song {song.title} removed from queue.')
-                logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+                #logger_music.info(f"Removed song: {song.title} | Removed by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
             else:
                 await ctx.reply('You cannot remove a song requested by someone else.',delete_after=5,ephemeral=True)
 
     @music.command(name="queue",description="Prints out a specified page of the music queue, defaults to first page.")
-    async def queue(self, ctx: commands.Context, page: app_commands.Range[int, 1, 100] = 1):
+    async def queue(self, ctx: ContextU, page: app_commands.Range[int, 1, 100] = 1):
         '''Prints out a specified page of the music queue, defaults to first page.'''
         try:
             if ctx.guild is None: 
@@ -440,12 +439,12 @@ class MusicCog(commands.Cog):
                 to_send += f"`{pos+1})` {(dchyperlink(song.url,song.title)):<30} | {song.requested_by.mention}\n"
             emb = makeembed_bot(title="Music Queue",description=to_send,color=None,footer=f"Page {page}/{len(queue)//MUSIC_QUEUE_PER_PAGE+1}")
             await ctx.reply(embed=emb)
-            logger_music.info(f"Sent queue | Requested by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
+            #logger_music.info(f"Sent queue | Requested by {ctx.author} ({ctx.author.id}) in {ctx.guild} ({ctx.guild.id})")
         except:
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+    async def on_command_error(self, ctx: ContextU, error: commands.CommandError):
         logger_.error(traceback.format_exc()) 
 
     async def play_all_songs(self, guild: discord.Guild):
@@ -469,11 +468,11 @@ class MusicCog(commands.Cog):
             #if song is not None:
             await self.play_song(guild, song)
             if song is not None:
-                logger_music.info(f"Playing song: {song.title} | Requested by {song.requested_by} ({song.requested_by.id}) in {guild} ({guild.id})")
+                #logger_music.info(f"Playing song: {song.title} | Requested by {song.requested_by} ({song.requested_by.id}) in {guild} ({guild.id})")
             else:
-                logger_music.info(f"Playing Nothing | {guild} ({guild.id})")
+                #logger_music.info(f"Playing Nothing | {guild} ({guild.id})")
         # Disconnect after song queue is empty
-        logger_music.info(f"Inactivity Disconnect | {guild} ({guild.id})")
+        #logger_music.info(f"Inactivity Disconnect | {guild} ({guild.id})")
         await self.inactivity_disconnect(guild)
 
     async def play_song(self, guild: discord.Guild, song: Song):
@@ -507,7 +506,7 @@ class MusicCog(commands.Cog):
                 await asyncio.to_thread(ydl.download,[f'{song.url}'])
             except:
                 await self.play_all_songs(guild)
-                logger_music.error('Error downloading song. Skipping.')
+                #logger_music.error('Error downloading song. Skipping.')
                 return
         
         for file in os.listdir('audio'):
