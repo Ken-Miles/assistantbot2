@@ -1,18 +1,15 @@
-import logging
-from logging import Logger
-import aiohttp
-import discord
-from discord import DMChannel, app_commands, Interaction, Embed, ui
-from discord.ext import commands, tasks
-from collections import deque
-from discord.ext import commands
-from aidenlib.main import getorfetch_channel, getorfetch_guild, getorfetch_user, makeembed, makeembed_bot
-import datetime
-import main
-from main import formatter
-import traceback
+from __future__ import annotations
+
 from typing import Optional
-from utils import CogU, ContextU, emojidict, makeembed_bot
+
+import datetime
+import logging
+import traceback
+
+import discord
+from discord.ext import commands, tasks
+
+from utils import CogU, ContextU, emojidict, makeembed_bot, formatter
 
 memes_handler = logging.FileHandler(filename='memes.log', encoding='utf-8', mode='a+')
 memes_handler.setFormatter(formatter)
@@ -45,7 +42,7 @@ class MemeCog(CogU, name="Memes"):
     async def checkmemes(self):
         try:
             if datetime.datetime.now().hour in [12,18,22] and datetime.datetime.now().minute == 0:
-                channel = await getorfetch_channel(SNUG_MEMES, await getorfetch_guild(LUNENBURG,self.bot)) # type: ignore
+                channel = await self.bot.getorfetch_channel(SNUG_MEMES, await self.bot.getorfetch_guild(LUNENBURG,self.bot)) # type: ignore
                 #await channel.send("funny meme time")
                 logger_memes.info("[auto] funny meme time")
                 m = await channel.send(embed=await self.getmeme())
