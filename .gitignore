@@ -22,7 +22,6 @@ data visualization/
 Python-3.10.0/
 
 # ignore logs + secret files
-*.txt
 *.log
 *.yml
 
