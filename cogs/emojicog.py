@@ -20,7 +20,7 @@ class EmojiCog(CogU, name="Emojis"):
 
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.bot.tree.add_command(app_ContextUMenu(name='Convert to Emoji', callback=self.emoji_ctx_menu, type=discord.enums.AppCommandType.message))
+        self.bot.tree.add_command(app_commands.ContextMenu(name='Convert to Emoji', callback=self.emoji_ctx_menu, type=discord.enums.AppCommandType.message))
     
     def _image_to_emoji(self, image: Union[Image.Image, bytes, BytesIO]) -> BytesIO:
         if isinstance(image, bytes):

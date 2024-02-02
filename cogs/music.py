@@ -445,7 +445,8 @@ class MusicCog(CogU, name="Music"):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: ContextU, error: commands.CommandError):
-        logger_.error(traceback.format_exc()) 
+        pass
+        #logger_.error(traceback.format_exc()) 
 
     async def play_all_songs(self, guild: discord.Guild):
         queue = self.music_queues.get(guild)
@@ -460,16 +461,17 @@ class MusicCog(CogU, name="Music"):
 
             if song is None:
                 status = f'{emojidict.get("headphones")} Nothing.'
-            try:
-                await set_voice_status(guild.voice_client.channel, status,[self.bot.session, self.bot.session2, self.bot.session3])
-            except:
-                logger_.error(traceback.format_exc())
+            # try:
+            #     await set_voice_status(guild.voice_client.channel, status,[self.bot.session, self.bot.session2, self.bot.session3])
+            # except:
+            #     pass
+            #     #logger_.error(traceback.format_exc())
 
             #if song is not None:
             await self.play_song(guild, song)
-            if song is not None:
+            #if song is not None:
                 #logger_music.info(f"Playing song: {song.title} | Requested by {song.requested_by} ({song.requested_by.id}) in {guild} ({guild.id})")
-            else:
+            #else:
                 #logger_music.info(f"Playing Nothing | {guild} ({guild.id})")
         # Disconnect after song queue is empty
         #logger_music.info(f"Inactivity Disconnect | {guild} ({guild.id})")

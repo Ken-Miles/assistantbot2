@@ -3,6 +3,8 @@ from __future__ import annotations
 import traceback
 
 import discord
+from discord import app_commands
+from discord.ext import commands
 
 from utils import CogU, ContextU, generic_autocomplete
 
