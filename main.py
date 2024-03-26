@@ -56,7 +56,7 @@ discord_auth_logger.addHandler(discord_auth_handler)
 
 @bot.event
 async def on_ready():
-    date = datetime.datetime.fromtimestamp(int(datetime.datetime.now().timestamp()))
+    date = datetime.datetime.fromtimestamp(int(time.time()))
     print(f"{date}: Ready!")
 
 async def main():
