@@ -11,7 +11,7 @@ from discord.ext import commands
 import yaml
 
 from cogs import EXTENSIONS
-from utils import AssistantBot, MentionableTree, formatter
+from utils import BotU, MentionableTree, formatter
 
 with open('client.yml', 'r') as f: 
     config = dict(yaml.safe_load(f))
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 {currentdate_epoch}""")
 
 intents = discord.Intents.all()
-bot = AssistantBot(command_prefix=commands.when_mentioned_or('?'),
+bot = BotU(command_prefix=commands.when_mentioned_or('?'),
 tree_cls = MentionableTree, intents=intents,activity=discord.Activity(type=discord.ActivityType.playing,name='with the API'), 
 status = discord.Status.online)
 tree = bot.tree
