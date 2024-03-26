@@ -10,6 +10,7 @@ dbtesting.py
 graphs.py
 selfbot.py
 wikidata.py
+custom_constants.py
 data visualization/
 
 # ignore mac garbage
@@ -22,15 +23,24 @@ data visualization/
 Python-3.10.0/
 
 # ignore logs + secret files
+*.txt
+!requirements.txt
 *.log
 *.yml
+*.yaml
 
 # ignore DB files
 *.db
+*.db-shm
+*.db-wal
+
 *.sql
-*.sqlite3
 *.sqlite-shm
 *.sqlite-wal
+
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 
 # other
 ssh.config
