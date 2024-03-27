@@ -5,9 +5,7 @@ import discord
 from discord import Activity, ActivityType, AuditLogEntry, app_commands
 from discord.abc import Snowflake
 from discord.ext import tasks, commands
-from utils import CogU, BotU, ContextU, FutureTime, dctimestamp, makeembed_bot
-from utils.constants import emojidict
-import traceback
+from utils import CogU, BotU, ContextU, FutureTime, dctimestamp, makeembed_bot, RelativeDelta, emojidict
 from cogs.models import Cases
 import re
 
@@ -18,10 +16,14 @@ class ModerationActionType(Enum):
     ban = ("ban", discord.AuditLogAction.ban)
     unban = ("unban", discord.AuditLogAction.unban)
     kick = ("kick", discord.AuditLogAction.kick)
-    timeout = ("timeout", None)
-    untimeout = ("untimeout", None)
+    timeout = ("timeout", discord.AuditLogAction.member_update)
+    untimeout = ("untimeout", discord.AuditLogAction.member_update)
     mute = timeout
     unmute = untimeout
+
+    # audit log actions
+    tempban = ("tempban", discord.AuditLogAction.ban)
+    warning = ("warning", None)
 
     @staticmethod
     def from_str(s: str) -> 'ModerationActionType':
@@ -136,12 +138,142 @@ def makeembed_successfulaction(*args, **kwargs):
     emb = makeembed_bot(*args, **kwargs)
     return emb
 
+# class SendFlags(commands.commands.FlagConverter, prefix='--', delimiter=' '):
+#     dm_reason: Optional[bool] = True
+#     reply: Optional[discord.Message] = None
+
 class AdminCog(CogU, name='Admin Comands', hidden=False):
     bot: BotU
 
     def __init__(self, bot: BotU):
         self.bot = bot
     
+    @commands.hybrid_command(name='warn', description='Warn a user', aliases=['w'])
+    @commands.guild_only()
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
+    @app_commands.describe(
+        member="The members to warn",
+        #dm_reason="Whether the user should be DMed a reason they were warned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def warn(self, ctx: ContextU, member: MemberID, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+    #async def warn(self, ctx: ContextU, member: MemberID, *, )
+        """Warn a member.
+
+        This has the same permissions as the `kick` command.
+        """
+        await ctx.defer()
+        moderator_anonymous = anonymous == 'anonymous'
+        await self.warn_member(ctx, member, anonymous=moderator_anonymous, reason=reason)
+
+    @commands.command(name='multiwarn', description='Warn multiple users', aliases=['mw', 'warns'])
+    @commands.guild_only()
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
+    @app_commands.describe(
+        members="The members to warn",
+        #dm_reason="Whether the user should be DMed a reason they were warned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def multiwarn(self, ctx: ContextU, members: commands.Greedy[MemberID], anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+        """Warn multiple members.
+
+        This has the same permissions as the `kick` command.
+        """
+        await ctx.defer()
+        assert ctx.guild is not None
+        member_list = [await self.bot.getorfetch_member(x, ctx.guild) for x in members if isinstance(x, int)] + [x for x in members if isinstance(x, discord.Member)]
+        moderator_anonymous = anonymous == 'anonymous'
+        dm_reason_ = dm_reason == 'dmreason'
+        await self.warn_member(ctx, member_list, dm_reason=dm_reason_, anonymous=moderator_anonymous, reason=reason)
+    
+    async def warn_member(self, ctx: ContextU, member: Union[discord.Member, List[discord.Member]], dm_reason: bool=True, anonymous: bool=False, reason: Optional[str]=None) -> bool:
+        """Warn a member.
+
+        Args:
+            ctx (ContextU): Context of the command.
+            member (discord.Member): The member to warn.
+            dm_reason (bool): Whether the user should be DMed the reason they were warned. Defaults to True.
+            anonymous (bool): Whether the moderator should be viewable when looking up the case. Defaults to False.
+            reason (Optional[str], optional): The reason to show in the audit log. Defaults to None.
+        
+        Returns:
+            bool: Whether the action was successful.
+        """
+
+        assert ctx.guild is not None
+
+        if not reason:
+            original_reason = "No reason provided."
+        else:
+            original_reason = reason
+        reason = f"{ctx.author} ({ctx.author.id}): {original_reason}."
+        
+        if isinstance(member, discord.Member):
+            members = [member]
+        else:
+            members = member
+        
+        if not members:
+            emb = makeembed_failedaction(
+                description="You must specify a member/members to warn.",
+            )
+            await ctx.reply(embed=emb, ephemeral=True, delete_after=10)
+            return False
+        
+        if any([x == ctx.author for x in members]):
+            emb = makeembed_failedaction(
+                description="You cannot warn yourself.",
+            )
+            await ctx.reply(embed=emb, ephemeral=True, delete_after=10)
+            return False
+
+        if any([x == ctx.guild.owner for x in members]):
+            emb = makeembed_failedaction(
+                description="You cannot warn the owner of the server.",
+            )
+            await ctx.reply(embed=emb, ephemeral=True, delete_after=10)
+            return False
+
+        sucessful_warns = []
+        failed_warns = []
+        for member in members:
+            try:
+                if dm_reason:
+                    moderator = ctx.author.mention if not anonymous else "`The server moderators.`"
+                    emb = makeembed_bot(
+                        title=f"You have been warned in {ctx.guild.name}.",
+                        description=f"You have been warned in {ctx.guild.name}.\n> Reason: `{original_reason}`\nPerformed by: {moderator}\n\nPlease reach out to the server staff if you have any questions or wish to appeal.",
+                        color=discord.Color.red(),
+                    )
+                    try: await member.send(embed=emb)
+                    except: pass
+                
+                await self.on_moderation_action(None, ModerationActionType.warning, member, ctx.author, performed_with_bot=True, anonymous=anonymous, reason=original_reason)
+                sucessful_warns.append(member)
+            except Exception as e:
+                failed_warns.append(member)
+
+        if not failed_warns:
+            emb = makeembed_successfulaction(
+                description=f"{emojidict.get('warning')} {', '.join([x.mention for x in sucessful_warns]).rstrip(', ')} ha{'ve' if len(sucessful_warns) > 1 else 's'} been warned.",
+            )
+        elif failed_warns and sucessful_warns:
+            emb = makeembed_partialaction(
+                description=
+                f"""{emojidict.get('warning')} {', '.join([x.mention for x in sucessful_warns]).rstrip(', ')} ha{'ve' if len(sucessful_warns) > 1 else 's'} been warned.
+                {emojidict.get('warning')} {', '.join([x.mention for x in failed_warns]).rstrip(', ')} could not be warned.""",
+            )
+        else:
+            emb = makeembed_failedaction(
+                description=f"{emojidict.get('warning')} {', '.join([x.mention for x in failed_warns]).rstrip(', ')} could not be warned.",
+            )
+        await ctx.reply(embed=emb)
+        return True
+
     @commands.hybrid_command(name='mute', description='Mute a user', aliases=['timeout','to', 'm', 'mu', 'silence'])
     @commands.guild_only()
     @commands.has_permissions(moderate_members=True)
@@ -150,6 +282,7 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @app_commands.describe(
         member="The person to mute",
         time="The duration for the mute.",
+        #dm_reason="Whether the user should be DMed a reason they were muted. Defaults to True.",
         anonymous="Whether the user should see the responsible moderator. Defaults to False.",
         reason="The reason for performing this action. Optional.",
     )
@@ -174,6 +307,7 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @app_commands.describe(
         members="The members to mute.",
         time="The duration of the mute.",
+        #dm_reason="Whether the user should be DMed a reason they were muted. Defaults to True."
         anonymous="Whether the user should see the responsible moderator. Defaults to False.",
         reason="The reason for performing this action. Optional.",
     )
@@ -199,6 +333,7 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @can_mute()
     @app_commands.describe(
         member="The members to unmute",
+        #dm_reason="Whether the user should be DMed a reason they were unmuted. Defaults to True.",
         anonymous="Whether the moderator should be made anonymous.",
         reason="The reason for performing this action. Optional.",
     )
@@ -217,6 +352,7 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @can_mute()
     @app_commands.describe(
         member="The members to unmute",
+        #dm_reason="Whether the user should be DMed a reason they were unmuted. Defaults to True.",
         anonymous="Whether the moderator should be made anonymous.",
         reason="The reason for performing this action. Optional.",
     )
@@ -252,6 +388,8 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
             reason = f"{ctx.author} ({ctx.author.id}): {reason}"
         
         is_unmute = until is None
+        action = ModerationActionType.unmute if is_unmute else ModerationActionType.mute
+        action_emoji = emojidict.get(str(action))
 
         if isinstance(member, discord.Member):
             members = [member]
@@ -315,12 +453,12 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         if not is_unmute:
             if not failed_mutes:
                 emb = makeembed_successfulaction(
-                    description=f"{emojidict.get('speak_no_evil')} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been muted until {dctimestamp(until, 'f')}.",
+                    description=f"{action_emoji} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been muted until {dctimestamp(until, 'f')}.",
                 )
             elif failed_mutes and sucessful_mutes:
                 emb = makeembed_partialaction(
                     description=
-                    f"""{emojidict.get('speak_no_evil')} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been muted until {dctimestamp(until, 'f')}.
+                    f"""{action_emoji} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been muted until {dctimestamp(until, 'f')}.
                     {emojidict.get('warning')} {', '.join([x.mention for x in failed_mutes]).rstrip(', ')} could not be muted.""",
                 )
             else:
@@ -330,12 +468,12 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         else:
             if not failed_mutes:
                 emb = makeembed_successfulaction(
-                    description=f"{emojidict.get('speaking_head')} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been unmuted.",
+                    description=f"{action_emoji} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been unmuted.",
                 )
             elif failed_mutes and sucessful_mutes:
                 emb = makeembed_partialaction(
                     description=
-                    f"""{emojidict.get('speaking_head')} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been unmuted.
+                    f"""{action_emoji} {', '.join([x.mention for x in sucessful_mutes]).rstrip(', ')} ha{'ve' if len(sucessful_mutes) > 1 else 's'} been unmuted.
                     {emojidict.get('warning')} {', '.join([x.mention for x in failed_mutes]).rstrip(', ')} could not be unmuted.""",
                 )
             else:
@@ -351,11 +489,11 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @commands.bot_has_permissions(kick_members=True)
     @app_commands.describe(
         member="The members to unmute",
-        dm_reason="Whether the user should be DMed a reason they were kicked. Defaults to True.",
+       #dm_reason="Whether the user should be DMed a reason they were kicked. Defaults to True.",
         anonymous="Whether the moderator should be made anonymous.",
         reason="The reason for performing this action. Optional.",
     )
-    async def kick(self, ctx: ContextU, member: discord.Member, dm_reason: Optional[bool]=True, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+    async def kick(self, ctx: ContextU, member: discord.Member, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
         """Kick a member from the server.
 
         This has the same permissions as the `kick` command.
@@ -368,7 +506,13 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @commands.guild_only()
     @commands.has_permissions(kick_members=True)
     @commands.bot_has_permissions(kick_members=True)
-    async def multikick(self, ctx: ContextU, members: commands.Greedy[Union[int, discord.Member]], dm_reason: bool=True, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+    @app_commands.describe(
+        members="The members to kick",
+        #dm_reason="Whether the user should be DMed a reason they were kicked. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def multikick(self, ctx: ContextU, members: commands.Greedy[Union[int, discord.Member]], anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
         """Kick multiple members from the server.
 
         This has the same permissions as the `kick` command.
@@ -400,7 +544,9 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         else:
             original_reason = reason
         reason = f"{ctx.author} ({ctx.author.id}): {original_reason}."
-        
+        action = ModerationActionType.kick
+        action_emoji = emojidict.get(str(action))
+
         if isinstance(member, discord.Member):
             members = [member]
         else:
@@ -443,17 +589,18 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
                 
                 await member.kick(reason=reason)
                 sucessful_kicks.append(member)
+                await self.on_moderation_action(None, action, member, ctx.author, performed_with_bot=True, anonymous=anonymous, reason=original_reason)
             except Exception as e:
                 failed_kicks.append(member)
 
         if not failed_kicks:
             emb = makeembed_successfulaction(
-                description=f"{emojidict.get('wave')} {', '.join([x.mention for x in sucessful_kicks]).rstrip(', ')} ha{'ve' if len(sucessful_kicks) > 1 else 's'} been kicked.",
+                description=f"{action_emoji} {', '.join([x.mention for x in sucessful_kicks]).rstrip(', ')} ha{'ve' if len(sucessful_kicks) > 1 else 's'} been kicked.",
             )
         elif failed_kicks and sucessful_kicks:
             emb = makeembed_partialaction(
                 description=
-                f"""{emojidict.get('wave')} {', '.join([x.mention for x in sucessful_kicks]).rstrip(', ')} ha{'ve' if len(sucessful_kicks) > 1 else 's'} been kicked.
+                f"""{action_emoji} {', '.join([x.mention for x in sucessful_kicks]).rstrip(', ')} ha{'ve' if len(sucessful_kicks) > 1 else 's'} been kicked.
                 {emojidict.get('warning')} {', '.join([x.mention for x in failed_kicks]).rstrip(', ')} could not be kicked.""",
             )
         else:
@@ -464,17 +611,59 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         await ctx.reply(embed=emb)
         return True
     
+    @commands.hybrid_command(name='tempban', description='Temporarily ban a user', aliases=['tb', 'tban'])
+    @commands.guild_only()
+    @commands.has_permissions(ban_members=True)
+    @commands.bot_has_permissions(ban_members=True)
+    @app_commands.describe(
+        member="The members to ban",
+        time="The duration of the ban.",
+        #dm_reason="Whether the user should be DMed a reason they were banned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def tempban(self, ctx: ContextU, member: MemberID, time: FutureTime, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+        """Temporarily ban a member from the server.
+
+        This has the same permissions as the `ban` command.
+        """
+        await ctx.defer()
+        moderator_anonymous = anonymous == 'anonymous'
+        await self.ban_member(ctx, member, dm_reason=dm_reason, anonymous=moderator_anonymous, reason=reason)
+    
+    @commands.command(name='multitempban', description='Temporarily ban multiple users', aliases=['mtb', 'tbans'])
+    @commands.guild_only()
+    @commands.has_permissions(ban_members=True)
+    @commands.bot_has_permissions(ban_members=True)
+    @app_commands.describe(
+        members="The members to ban",
+        time="The duration of the ban.",
+        #dm_reason="Whether the user should be DMed a reason they were banned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def multitempban(self, ctx: ContextU, members: commands.Greedy[MemberID], time: RelativeDelta, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+        """Temporarily ban multiple members from the server.
+
+        This has the same permissions as the `ban` command.
+        """
+        await ctx.defer()
+        assert ctx.guild is not None
+        member_list = [await self.bot.getorfetch_member(x, ctx.guild) for x in members if isinstance(x, int)] + [x for x in members if isinstance(x, discord.Member)]
+        moderator_anonymous = anonymous == 'anonymous'
+        await self.ban_member(ctx, member_list, duration=time, dm_reason=dm_reason, anonymous=moderator_anonymous, reason=reason)
+
     @commands.hybrid_command(name='ban', description='Ban a user', aliases=['remove', 'b'])
     @commands.guild_only()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
     @app_commands.describe(
         member="The members to ban",
-        dm_reason="Whether the user should be DMed a reason they were banned. Defaults to True.",
+        #dm_reason="Whether the user should be DMed a reason they were banned. Defaults to True.",
         anonymous="Whether the moderator should be made anonymous.",
         reason="The reason for performing this action. Optional.",
     )
-    async def ban(self, ctx: ContextU, member: MemberID, dm_reason: bool=True, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+    async def ban(self, ctx: ContextU, member: MemberID, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
         """Ban a member from the server.
 
         This has the same permissions as the `ban` command.
@@ -487,7 +676,13 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @commands.guild_only()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def multiban(self, ctx: ContextU, members: commands.Greedy[MemberID], dm_reason: bool=True, anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
+    @app_commands.describe(
+        members="The members to ban",
+        #dm_reason="Whether the user should be DMed a reason they were banned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
+    async def multiban(self, ctx: ContextU, members: commands.Greedy[MemberID], anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
         """Ban multiple members from the server.
 
         This has the same permissions as the `ban` command.
@@ -499,12 +694,13 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         moderator_anonymous = anonymous == 'anonymous'
         await self.ban_member(ctx, member_list, dm_reason=dm_reason, anonymous=moderator_anonymous, reason=reason)
 
-    async def ban_member(self, ctx: ContextU, member: Union[discord.Member, List[discord.Member]], dm_reason: bool=True, anonymous: bool=False, reason: Optional[str]=None) -> bool:
+    async def ban_member(self, ctx: ContextU, member: Union[discord.Member, List[discord.Member]], duration: Optional[datetime.timedelta]=None, dm_reason: bool=True, anonymous: bool=False, reason: Optional[str]=None) -> bool:
         """Ban a member from the server.
 
         Args:
             ctx (ContextU): Context of the command.
             member (discord.Member): The member to ban.
+            duration (Optional[datetime.timedelta]): How long to ban for. If None, permenantly ban the member.
             dm_reason (bool): Whether the user should be DMed the reason they were banned. Defaults to True.
             anonymous (bool): Whether the moderator should be viewable when looking up the case. Defaults to False.
             reason (Optional[str], optional): The reason to show in the audit log. Defaults to None.
@@ -519,13 +715,16 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
             original_reason = "No reason provided."
         else:
             original_reason = reason
-        reason = f"{ctx.author} ({ctx.author.id}): {original_reason}."
         
+        reason = f"{ctx.author} ({ctx.author.id}): {original_reason}."
+        action = ModerationActionType.ban if not duration else ModerationActionType.tempban
+        action_emoji = emojidict.get(str(action))
+
         if isinstance(member, discord.Member):
             members = [member]
         else:
             members = member
-        
+
         if not members:
             emb = makeembed_failedaction(
                 description="You must specify a member/members to ban.",
@@ -553,9 +752,16 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
             try:
                 if dm_reason:
                     moderator = ctx.author.mention if not anonymous else "`The server moderators.`"
+                    if duration:
+                        now = discord.utils.utcnow()
+                        title = f"You have been temporarily banned from {ctx.guild.name}."
+                        desc = f"{title.rstrip('.')} until {dctimestamp(now + duration, 'f')} ({dctimestamp(now+duration, 'f')})."
+                    else:
+                        title = f"You have been permenantly banned from {ctx.guild.name}."
+                        desc = title
                     emb = makeembed_bot(
-                        title=f"You have been banned from {ctx.guild.name}.",
-                        description=f"You have been banned from {ctx.guild.name}.\n> Reason: `{original_reason}`\nPerformed by: {moderator}\n\nPlease reach out to the server staff if you have any questions or wish to appeal.",
+                        title=title,
+                        description=f"{desc}\n> Reason: `{original_reason}`\nPerformed by: {moderator}\n\nPlease reach out to the server staff if you have any questions or wish to appeal.",
                         color=discord.Color.red(),
                     )
                     try: await member.send(embed=emb)
@@ -563,22 +769,23 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
                 
                 await member.ban(reason=reason)
                 sucessful_bans.append(member)
+                await self.on_moderation_action(None, action, member, ctx.author, performed_with_bot=True, anonymous=anonymous, reason=original_reason)
             except Exception as e:
                 failed_bans.append(member)
         
         if not failed_bans:
             emb = makeembed_successfulaction(
-                description=f"{emojidict.get('wave')} {', '.join([x.mention for x in sucessful_bans]).rstrip(', ')} ha{'ve' if len(sucessful_bans) > 1 else 's'} been banned.",
+                description=f"{action_emoji} {', '.join([x.mention for x in sucessful_bans]).rstrip(', ')} ha{'ve' if len(sucessful_bans) > 1 else 's'} been {action}ned{' until ' + dctimestamp(discord.utils.utcnow() + duration, 'f') if duration else ''}.",
             )
         elif failed_bans and sucessful_bans:
             emb = makeembed_partialaction(
                 description=
-                f"""{emojidict.get('wave')} {', '.join([x.mention for x in sucessful_bans]).rstrip(', ')} ha{'ve' if len(sucessful_bans) > 1 else 's'} been banned.
-                {emojidict.get('warning')} {', '.join([x.mention for x in failed_bans]).rstrip(', ')} could not be banned.""",
+                f"""{action_emoji} {', '.join([x.mention for x in sucessful_bans]).rstrip(', ')} ha{'ve' if len(sucessful_bans) > 1 else 's'} been {action}ned{' until ' + dctimestamp(discord.utils.utcnow() + duration, 'f') if duration else ''}.",
+                {emojidict.get('warning')} {', '.join([x.mention for x in failed_bans]).rstrip(', ')} could not be {action}ned.""",
             )
         else:
             emb = makeembed_failedaction(
-                description=f"{emojidict.get('warning')} {', '.join([x.mention for x in failed_bans]).rstrip(', ')} could not be banned.",
+                description=f"{emojidict.get('warning')} {', '.join([x.mention for x in failed_bans]).rstrip(', ')} could not be {action}ned.",
             )
         
         await ctx.reply(embed=emb)
@@ -590,6 +797,7 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @commands.bot_has_permissions(ban_members=True)
     @app_commands.describe(
         member="The member to unban",
+        #dm_reason="Whether the user should be DMed a reason they were unbanned. Defaults to True.",
         anonymous="Whether the moderator should be made anonymous.",
         reason="The reason for performing this action. Optional.",
     )
@@ -606,6 +814,12 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
     @commands.guild_only()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
+    @app_commands.describe(
+        members="The members to unban",
+        #dm_reason="Whether the user should be DMed a reason they were unbanned. Defaults to True.",
+        anonymous="Whether the moderator should be made anonymous.",
+        reason="The reason for performing this action. Optional.",
+    )
     async def multiunban(self, ctx: ContextU, members: commands.Greedy[int], anonymous: Optional[Literal['anonymous']]=None, *, reason: Optional[str] = None):
         """Unban multiple members from the server.
 
@@ -637,6 +851,8 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         else:
             original_reason = reason
         reason = f"{ctx.author} ({ctx.author.id}): {original_reason}."
+        action = ModerationActionType.unban
+        action_emoji = emojidict.get(str(action))
 
         if isinstance(members, int):
             members = [members]
@@ -679,18 +895,18 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
             try:
                 await ctx.guild.unban(member, reason=reason)
                 sucessful_unbans.append(member)
-                await self.on_moderation_action(None, ModerationActionType.unban, member, ctx.author, performed_with_bot=True, anonymous=anonymous, reason=original_reason)
+                await self.on_moderation_action(None, action, member, ctx.author, performed_with_bot=True, anonymous=anonymous, reason=original_reason)
             except Exception as e:
                 failed_unbans.append(member)
 
         if not failed_unbans:
             emb = makeembed_successfulaction(
-                description=f"{emojidict.get('wave')} {', '.join([str(x) for x in sucessful_unbans]).rstrip(', ')} ha{'ve' if len(sucessful_unbans) > 1 else 's'} been unbanned.",
+                description=f"{action_emoji} {', '.join([str(x) for x in sucessful_unbans]).rstrip(', ')} ha{'ve' if len(sucessful_unbans) > 1 else 's'} been unbanned.",
             )
         elif failed_unbans and sucessful_unbans:
             emb = makeembed_partialaction(
                 description=
-                f"""{emojidict.get('wave')} {', '.join([str(x) for x in sucessful_unbans]).rstrip(', ')} ha{'ve' if len(sucessful_unbans) > 1 else 's'} been unbanned.
+                f"""{action_emoji} {', '.join([str(x) for x in sucessful_unbans]).rstrip(', ')} ha{'ve' if len(sucessful_unbans) > 1 else 's'} been unbanned.
                 {emojidict.get('warning')} {', '.join([str(x) for x in failed_unbans]).rstrip(', ')} could not be unbanned.""",
             )
         else:
@@ -706,11 +922,9 @@ class AdminCog(CogU, name='Admin Comands', hidden=False):
         affected_user: discord.abc.User, performing_user: discord.abc.User, 
         performed_with_bot: bool,  anonymous: bool=False, 
         reason: Optional[str]=None,
-        action_str: Optional[str]=None,
-    ) -> Cases:
+        action_str: Optional[str]=None) -> Cases:
         """Log a moderation case action to the database.
         Assigns a case ID, saves then returns that case ID.
-        
 
         Args:
             audit (Optional[discord.AuditLogEntry]): The audit log entry. Null if a global action.
