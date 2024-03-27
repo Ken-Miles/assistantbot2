@@ -86,6 +86,7 @@ class CasesCog(CogU, name='Admin Case Comands', hidden=False):
 
         emb = makeembed_bot(f"Case {case.case_id}", timestamp=case.created_at)
         affected_user = await self.bot.getorfetch_user(case.user_id, guild=ctx.guild)
+        emb.add_field(name='Case Number', value=str(case.case_id))
         if affected_user is not None:
             emb.add_field(name='Affected Member', value=f"{affected_user} ({affected_user.mention})")
         else:
