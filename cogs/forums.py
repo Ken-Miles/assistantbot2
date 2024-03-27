@@ -78,7 +78,7 @@ class ForumCog(CogU, name="Forums"):
             reason=f'Marked as unsolved by {user} (ID: {user.id})',
         )
 
-    @commands.command(name='solved', aliases=['is_solved'])
+    @commands.command(name='solved',aliases=['solve'])
     @commands.guild_only()
     @commands.cooldown(1, 20, commands.BucketType.channel)
     @is_help_thread()
@@ -88,7 +88,7 @@ class ForumCog(CogU, name="Forums"):
 
         assert isinstance(ctx.channel, discord.Thread)
 
-        if can_close_threads(ctx) and ctx.invoked_with == 'solved':
+        if can_close_threads(ctx):
             await ctx.message.add_reaction(str(emojidict.get(True)))
             await ctx.send("This thread has been marked as solved/sold. If you need to reopen it, please contact a moderator.")
             await self.mark_as_solved(ctx.channel, ctx.author)
@@ -114,15 +114,17 @@ class ForumCog(CogU, name="Forums"):
     async def on_thread_create(self, thread: discord.Thread): # this is the function that runs when a post is made in a forum channel
         assert thread.guild is not None
         if isinstance(thread, discord.Thread) and isinstance(thread.parent, ForumChannel):
-            try:
-                starter_message = thread.starter_message
-                if not starter_message:
-                    starter_message = [x async for x in thread.history(limit=1, oldest_first=True)][0]
-                await starter_message.pin(reason=f'Thread opened by {thread.owner}, automatic pin.')
-            except:
-                pass
+            if thread.permissions_for(thread.guild.me).manage_messages:
+                try:
+                    starter_message = thread.starter_message
+                    if not starter_message:
+                        starter_message = [x async for x in thread.history(limit=1, oldest_first=True)][0]
+                    await thread.join()
+                    await starter_message.pin(reason=f'Thread opened by {thread.owner}, automatic pin.')
+                except:
+                    pass
     
-    @commands.command(name='unsolved', aliases=['is_unsolved'])
+    @commands.command(name='unsolved', aliases=['unsolve','reopen'])
     @commands.guild_only()
     @commands.cooldown(1, 20, commands.BucketType.channel)
     @is_help_thread()

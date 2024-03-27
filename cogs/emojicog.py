@@ -76,5 +76,53 @@ class EmojiCog(CogU, name="Emojis"):
         except:
             traceback.print_exc()
 
+    @commands.hybrid_command(name='copy',description='Copy emojis from other servers into your server.')
+    @commands.has_permissions(manage_emojis=True)
+    @commands.guild_only()
+    @commands.is_owner()
+    @app_commands.describe(emojis='The emojis you want to copy.')
+    async def copy(self, ctx: ContextU, *, emojis: str):
+        try:
+            await ctx.defer()
+
+            emojis = emojis.strip()
+            
+            assert ctx.guild is not None
+
+            free_spots = ctx.guild.emoji_limit - len(ctx.guild.emojis)
+
+            if len(emojis.split(' ')) > free_spots:
+                return await ctx.reply(f"This server doesn't have enough spots to copy all the emojis provided.")
+
+            returnv: List[Emoji] = []
+
+            for emoji in emojis.strip().split(' '):
+                if not (match := EMOJI_REGEX.match(emoji.strip())): break
+                try:
+                    emoji = PartialEmoji.from_str(emoji.strip())
+                except: break
+
+               #print('before')
+                newemoji = await ctx.guild.create_custom_emoji(
+                    name=emoji.name, 
+                    image=await emoji.read(),
+
+                    reason=f'Emoji copied by {ctx.author}'
+                )
+                #print('after')
+
+                returnv.append(newemoji)
+                
+            else:
+                return await ctx.reply(f"One of the emojis provided was not a valid emoji.")
+            
+            desc = f'Hey {ctx.author.mention}, I copied the emojis to this guild:\n'
+
+            for emoji in returnv: desc += f'`{emoji}`: {emoji}'
+            
+            await ctx.reply(desc, ephemeral=True)
+        except:
+            await ctx.reply(f"```{traceback.format_exc()[:2000]}```",ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(EmojiCog(bot))

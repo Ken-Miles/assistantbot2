@@ -11,12 +11,12 @@ import unicodedata
 from discord.ext import commands
 from discord import Emoji, PartialEmoji, app_commands
 
-from utils import CogU, ContextU
+from utils import CogU, ContextU, BotU
 
 EMOJI_REGEX = re.compile('<(?P<animated>a?):(?P<name>[a-zA-Z0-9_]{2,32}):(?P<id>[0-9]{18,22})>')
 
 class OtherCog(CogU, name='Miscellaneous'):
-    def __init__(self, bot):
+    def __init__(self, bot: BotU):
         self.bot = bot
 
     @commands.command(name='source',description="Displays my full source code or for a specific command.")
@@ -89,55 +89,6 @@ class OtherCog(CogU, name='Miscellaneous'):
         if len(msg) > 2000:
             return await ctx.reply('Output too long to display.')
         await ctx.reply(msg,ephemeral=True)
-
-    @commands.hybrid_command(name='copy',description='Copy emojis from other servers into your server.')
-    @commands.has_permissions(manage_emojis=True)
-    @commands.guild_only()
-    @commands.is_owner()
-    @app_commands.describe(emojis='The emojis you want to copy.')
-    async def copy(self, ctx: ContextU, *, emojis: str):
-        try:
-            await ctx.defer()
-
-            emojis = emojis.strip()
-            
-            assert ctx.guild is not None
-
-            free_spots = ctx.guild.emoji_limit - len(ctx.guild.emojis)
-
-            if len(emojis.split(' ')) > free_spots:
-                return await ctx.reply(f"This server doesn't have enough spots to copy all the emojis provided.")
-
-            returnv: List[Emoji] = []
-
-            for emoji in emojis.strip().split(' '):
-                if not (match := EMOJI_REGEX.match(emoji.strip())): break
-
-                try:
-                    emoji = PartialEmoji.from_str(emoji.strip())
-                except: break
-
-                print('before')
-                newemoji = await ctx.guild.create_custom_emoji(
-                    name=emoji.name, 
-                    image=await emoji.read(),
-
-                    reason=f'Emoji copied by {ctx.author}'
-                )
-                print('after')
-
-                returnv.append(newemoji)
-                
-            else:
-                return await ctx.reply(f"One of the emojis provided was not a valid emoji.")
-            
-            desc = f'Hey {ctx.author.mention}, I copied the emojis to this guild:\n'
-
-            for emoji in returnv: desc += f'`{emoji}`: {emoji}'
-            
-            await ctx.reply(desc, ephemeral=True)
-        except:
-            await ctx.reply(f"```{traceback.format_exc()[:2000]}```",ephemeral=True)
 
     # @commands.command(name='voicestatus',description="Set the voice description for a VC.")
     # #@commands.has_permissions(set_voice_channel_status=True)
