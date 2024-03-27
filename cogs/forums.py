@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from re import S
 import traceback
-from typing import Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union
 
 import discord
 from discord import ForumChannel, ForumTag, app_commands
@@ -13,6 +13,10 @@ from utils.context import BotU
 
 SOLVED_TAGS = ["Solved", "Completed", "Sold", "Closed", "Approved", "Implemented"]
 SOLVED_TAGS_LOWER = [x.lower().strip() for x in SOLVED_TAGS]
+
+DENIED_TAGS = ["Denied", "Rejected", "Not Approved", "Unapproved", "Not Implemented"]
+DENIED_TAGS_LOWER = [x.lower().strip() for x in DENIED_TAGS]
+
 
 async def solved_autocomplete(interaction: discord.Interaction, current: str):
     return await generic_autocomplete(current, SOLVED_TAGS_LOWER, interaction)
@@ -38,11 +42,19 @@ def can_close_threads(ctx: ContextU) -> bool:
         permissions.manage_threads or ctx.channel.owner_id == ctx.author.id
     )
 
-async def find_solved_tag(tags: Sequence[discord.ForumTag]) -> Optional[discord.ForumTag]:
+async def find_tag(tags: Sequence[discord.ForumTag], tag_names: Union[str, List[str]]) -> Optional[discord.ForumTag]:
+    if not isinstance(tag_names, list): tag_names = [tag_names]
+    tag_names = [x.lower().strip() for x in tag_names]
     for tag in tags:
-        if tag.name.lower().strip() in SOLVED_TAGS_LOWER:
+        if tag.name.lower().strip() in tag_names:
             return tag
     return None
+
+async def find_solved_tag(tags: Sequence[discord.ForumTag]) -> Optional[discord.ForumTag]:
+    return await find_tag(tags, SOLVED_TAGS)
+
+async def find_denied_tag(tags: Sequence[discord.ForumTag]) -> Optional[discord.ForumTag]:
+    return await find_tag(tags, DENIED_TAGS)
 
 class ForumCog(CogU, name="Forums"):
     def __init__(self, bot: BotU):
@@ -51,7 +63,9 @@ class ForumCog(CogU, name="Forums"):
     async def mark_as_solved(self, thread: discord.Thread, user: discord.abc.User) -> None:
         tags: Sequence[ForumTag] = thread.applied_tags
 
-        solved_tag = await find_solved_tag(tags)
+        assert isinstance(thread.parent, ForumChannel)
+
+        solved_tag = await find_solved_tag(thread.parent.available_tags)
 
         if solved_tag and solved_tag not in tags:
             tags = [solved_tag] + tags[:4]
@@ -66,7 +80,9 @@ class ForumCog(CogU, name="Forums"):
     async def mark_as_unsolved(self, thread: discord.Thread, user: discord.abc.User) -> None:
         tags: Sequence[ForumTag] = thread.applied_tags
 
-        solved_tag = await find_solved_tag(tags)
+        assert isinstance(thread.parent, ForumChannel)
+
+        solved_tag = await find_solved_tag(thread.parent.available_tags)
 
         if solved_tag:
             tags.remove(solved_tag)

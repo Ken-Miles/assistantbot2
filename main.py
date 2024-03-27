@@ -11,7 +11,7 @@ from discord.ext import commands
 import yaml
 
 from cogs import EXTENSIONS
-from utils import BotU, MentionableTree, formatter
+from utils import BotU, MentionableTree, formatter, Help
 
 with open('client.yml', 'r') as f: 
     config = dict(yaml.safe_load(f))
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 intents = discord.Intents.all()
 bot = BotU(command_prefix=commands.when_mentioned_or('?'),
 tree_cls = MentionableTree, intents=intents,activity=discord.Activity(type=discord.ActivityType.playing,name='with the API'), 
-status = discord.Status.online)
+status = discord.Status.online, help_command=Help())
 tree = bot.tree
 
 logger = logging.getLogger('discord')
@@ -69,7 +69,10 @@ async def main():
                 discord.utils.setup_logging(handler=handler)
                 for file in EXTENSIONS:
                     if not file.startswith('_') and not file == "main":
-                        await bot.load_extension(file)
+                        try:
+                            await bot.load_extension(file)
+                        except Exception as e:
+                            print(f"Failed to load extension {file}: {e}")
                 await bot.load_extension("jishaku")
                 await bot.start(TOKEN)
 
