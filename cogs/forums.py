@@ -12,7 +12,7 @@ from utils import CogU, ContextU, generic_autocomplete, emojidict
 from utils.context import BotU
 
 SOLVED_TAGS = ["Solved", "Completed", "Sold", "Closed", "Approved", "Implemented"]
-SOLVED_TAGS_LOWER = [x.lower() for x in SOLVED_TAGS]
+SOLVED_TAGS_LOWER = [x.lower().strip() for x in SOLVED_TAGS]
 
 async def solved_autocomplete(interaction: discord.Interaction, current: str):
     return await generic_autocomplete(current, SOLVED_TAGS_LOWER, interaction)
